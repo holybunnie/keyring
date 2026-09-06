@@ -137,6 +137,55 @@ python -m keyring least-privilege
 
 ---
 
+## Financial reach, layered (F2)
+
+**OBSERVED:** One number would be dishonest, because these are different quantities. Each layer below carries its own label, its own reason, and the snapshot components it was derived from. A layer whose inputs are missing is INCONCLUSIVE, never zero — absence of evidence is not a measurement of zero.
+
+```
+FINANCIAL REACH, LAYERED
+
+  Capital visible                                  0   OBSERVED
+      sum of every wallet balance in the latest complete snapshot; denominated as the API returned it, with no quoteAsset requested
+
+  Capital reachable by trading                     0   OBSERVED
+      capital held in wallets whose trading capability was probed and classified VERIFIED (COIN-M Futures, Spot, USDⓈ-M Futures)
+
+  Autonomous capital at risk                       0   OBSERVED
+      no confirmation step was observed in the tested client default, so all reachable capital could move without a human approving it. This figure is currently zero because the account is empty, NOT because a gate exists.
+
+  Spot holdings (non-zero assets)                  0   OBSERVED
+      spot balances with a non-zero free or locked amount
+
+  Immediate exit cost                              0   OBSERVED
+      there are no holdings to exit, so the cost is zero by absence rather than by an order-book walk
+
+  Futures gross notional ceiling        INCONCLUSIVE   INCONCLUSIVE
+      leverage brackets, margin mode and account limits are not resolved; a gross notional ceiling is not derivable from this evidence and is not asserted
+
+  Open futures positions            {'usds_positions': 0, 'coinm_positions': 0}   OBSERVED
+      positions with a non-zero amount across both futures products
+
+  INSTRUMENTS
+      capabilities verified        coin_m_futures, spot, usd_m_futures
+      spot symbols probed          1
+      spot symbols listed trading  1362
+      Reach is reported as probed versus listed. A listed instrument count is the venue's surface, not measured reach, and the two are never merged.
+```
+
+**OBSERVED — the autonomous line is the one that matters, and its reason is not the one the design anticipated.** The layered view was specified with an example reading `Autonomous capital at risk $0 — confirmation required`. That reason is false for this account. No confirmation step was observed in the tested client default, so **all reachable capital could move without a human approving it**. The figure is zero because the account is empty, not because a gate exists. A test asserts that a zero here can never be attributed to a gate that was not observed.
+
+**INCONCLUSIVE — the futures gross notional ceiling is refused, not estimated.** Leverage brackets, margin mode and existing positions all bear on it, and none is resolved by this evidence. Publishing an estimate would be a guess wearing a number's clothing.
+
+**OBSERVED — reach is reported as probed versus listed.** The venue's listed instrument count is not measured reach, and the two are never merged into a single figure.
+
+**Reproduce it:**
+
+```bash
+python -m keyring financial-reach
+```
+
+---
+
 ## Zero state change, proved rather than asserted
 
 **OBSERVED:** Every probe captures fourteen state components before and after — spot account and open orders, wallet balances, all-coin information, USDⓈ-M and COIN-M positions, balances and open orders, cross-margin detail and open orders, convert open orders, and spot trade-history head. The components are defined in the checksummed [`config/state_snapshot.yaml`](config/state_snapshot.yaml).
@@ -164,6 +213,8 @@ Every classification regenerates from the append-only evidence log alone. Nothin
 ```bash
 pip install -e .
 python -m keyring authority          # rebuild the authority map from evidence
+python -m keyring least-privilege    # diff the manifest against the measurement
+python -m keyring financial-reach    # layered capital view
 python -m keyring validate-config    # config checksums
 python -m pytest -q                  # full suite
 ```

@@ -29,6 +29,12 @@ def main() -> int:
     dashboard.add_argument("--host", default="127.0.0.1")
     dashboard.add_argument("--port", type=int, default=8080)
 
+    freach = subparsers.add_parser(
+        "financial-reach", help="layered capital view derived from the evidence log"
+    )
+    freach.add_argument("--evidence-dir", default="evidence/raw")
+    freach.add_argument("--json", action="store_true")
+
     leastpriv = subparsers.add_parser(
         "least-privilege", help="diff the strategy manifest against the measured fingerprint"
     )
@@ -47,6 +53,12 @@ def main() -> int:
     capture.add_argument("--run-id")
 
     args = parser.parse_args()
+    if args.command == "financial-reach":
+        from .financialreach import reach as fr_reach, render as fr_render
+
+        result = fr_reach(args.evidence_dir)
+        print(json.dumps(result, indent=2, default=str) if args.json else fr_render(result))
+        return 0
     if args.command == "least-privilege":
         from .leastprivilege import diff as lp_diff, render as lp_render
 

@@ -105,3 +105,20 @@ def test_no_unlabelled_numeric_claims(published):
         if re.search(r"\d", prose) and re.search(r"[a-z]{4,}", prose):
             offenders.append(stripped[:100])
     assert not offenders, f"unlabelled numeric claims in results: {offenders}"
+
+
+def test_every_documented_command_runs(published):
+    """A command the README tells a reader to run must actually work."""
+    import subprocess
+    import sys
+
+    commands = sorted(set(re.findall(r"python -m keyring ([a-z-]+)", published)))
+    assert commands, "README documents no keyring commands"
+    for command in commands:
+        result = subprocess.run(
+            [sys.executable, "-m", "keyring", command],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"`python -m keyring {command}` failed:\n{result.stderr[-500:]}"
