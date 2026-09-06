@@ -91,7 +91,7 @@ Every claim below is labelled **OBSERVED** (this build ran it and recorded the r
 **OBSERVED:** Each snapshot is canonicalised and hashed with SHA-256, and digests are chained across the session.
 
 ```
-records replayed        107
+records replayed        109
 state digests seen        6
 distinct states           1
 identical throughout   True
