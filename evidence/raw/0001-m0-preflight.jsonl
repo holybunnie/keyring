@@ -1,0 +1,1 @@
+{"record_type":"m0_preflight","run_id":"m0-preflight-2026-09-06T13:29:15Z","label":"OBSERVED","source":"local build environment","python":"3.12.1","supported_client_session":"NOT_CONFIGURED","agentic_mcp_session":"NOT_AVAILABLE","tools_list":"NOT_RUN","execution_probe":"NOT_RUN","permission_mutability_check":"NOT_RUN","secrets_captured":false}
