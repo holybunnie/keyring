@@ -1,0 +1,202 @@
+from __future__ import annotations
+
+import email.utils
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Callable, Iterable, Protocol
+
+from .evidence import EvidenceLog
+from .labels import GateOutcome
+from .models import EvidenceRecord, ProbeDefinition, StateSnapshot
+
+
+class ProbeSafetyError(RuntimeError):
+    pass
+
+
+class ProbeBudgetExceeded(ProbeSafetyError):
+    pass
+
+
+class ControlFailed(ProbeSafetyError):
+    pass
+
+
+class SafetyHalt(ProbeSafetyError):
+    pass
+
+
+@dataclass
+class ProbeBudget:
+    max_per_run: int
+    max_per_minute: int
+    clock: Callable[[], float] = time.monotonic
+    _run_count: int = 0
+    _capabilities: set[str] = field(default_factory=set)
+    _timestamps: list[float] = field(default_factory=list)
+
+    def reserve(self, capability: str) -> None:
+        now = self.clock()
+        self._timestamps = [stamp for stamp in self._timestamps if now - stamp < 60]
+        if capability in self._capabilities:
+            raise ProbeBudgetExceeded(f"one probe per capability already reserved: {capability}")
+        if self._run_count >= self.max_per_run:
+            raise ProbeBudgetExceeded("per-run probe budget exhausted")
+        if len(self._timestamps) >= self.max_per_minute:
+            raise ProbeBudgetExceeded("per-minute probe budget exhausted")
+        self._capabilities.add(capability)
+        self._run_count += 1
+        self._timestamps.append(now)
+
+
+@dataclass(frozen=True)
+class RateLimitDecision:
+    action: str
+    delay_seconds: float = 0
+    reason: str = ""
+
+
+class RateLimitPolicy:
+    def __init__(
+        self,
+        *,
+        retry_after_cap_seconds: float = 60,
+        backoff_base_seconds: float = 1,
+        backoff_max_seconds: float = 32,
+    ):
+        self.retry_after_cap_seconds = retry_after_cap_seconds
+        self.backoff_base_seconds = backoff_base_seconds
+        self.backoff_max_seconds = backoff_max_seconds
+
+    def _retry_after(self, headers: dict[str, str], now: datetime | None = None) -> float | None:
+        value = headers.get("Retry-After") or headers.get("retry-after")
+        if not value:
+            return None
+        try:
+            return max(0.0, min(float(value), self.retry_after_cap_seconds))
+        except ValueError:
+            try:
+                parsed = email.utils.parsedate_to_datetime(value)
+                reference = now or datetime.now(timezone.utc)
+                return max(0.0, min((parsed - reference).total_seconds(), self.retry_after_cap_seconds))
+            except (TypeError, ValueError, OverflowError):
+                return None
+
+    def inspect(self, status: int, headers: dict[str, str] | None = None, attempt: int = 0) -> RateLimitDecision:
+        headers = headers or {}
+        if status == 429:
+            retry_after = self._retry_after(headers)
+            backoff = min(self.backoff_base_seconds * (2**attempt), self.backoff_max_seconds)
+            delay = retry_after if retry_after is not None else backoff
+            return RateLimitDecision("RETRY", delay, "429 rate limit; honour Retry-After or exponential backoff")
+        if status == 418:
+            return RateLimitDecision("HALT", 0, "418 ban response; no retry")
+        if status == 403:
+            return RateLimitDecision("HALT", 0, "403 response; investigate before resuming")
+        if status >= 500:
+            return RateLimitDecision("INCONCLUSIVE", 0, "5xx response; no aggressive retry")
+        return RateLimitDecision("CONTINUE")
+
+
+class ProbeAdapter(Protocol):
+    def positive_control(self) -> "AdapterResponse": ...
+
+    def before_state(self) -> StateSnapshot: ...
+
+    def probe(self, definition: ProbeDefinition) -> "AdapterResponse": ...
+
+    def after_state(self) -> StateSnapshot: ...
+
+
+@dataclass(frozen=True)
+class AdapterResponse:
+    status: int | None
+    outcome: str
+    error_code: str | None = None
+    raw_response: str | None = None
+    response: object = None
+    headers: dict[str, str] = field(default_factory=dict)
+    gate: GateOutcome | None = None
+    advertised: bool | None = None
+    granted_scope: str | None = None
+
+
+class SafeProbeRunner:
+    """Runs only after a passing control and retains state proof for every probe."""
+
+    def __init__(
+        self,
+        *,
+        log: EvidenceLog,
+        budget: ProbeBudget,
+        rate_limits: RateLimitPolicy | None = None,
+        sleeper: Callable[[float], None] = time.sleep,
+    ):
+        self.log = log
+        self.budget = budget
+        self.rate_limits = rate_limits or RateLimitPolicy()
+        self.sleeper = sleeper
+
+    def run_batch(self, run_id: str, adapter: ProbeAdapter, definitions: Iterable[ProbeDefinition], config_sha256: str | None = None) -> list[EvidenceRecord]:
+        control = adapter.positive_control()
+        control_record = self.log.append(
+            EvidenceRecord(
+                record_type="positive_control",
+                run_id=run_id,
+                label="OBSERVED",
+                operation="account_read",
+                response=control.response,
+                raw_response=control.raw_response,
+                http_status=control.status,
+                error_code=control.error_code,
+                outcome=control.outcome,
+                control_passed=control.outcome == "success" and (control.status is None or 200 <= control.status < 300),
+                config_sha256=config_sha256,
+            )
+        )
+        if control_record.control_passed is not True:
+            raise ControlFailed("positive control failed; probe batch discarded")
+
+        appended: list[EvidenceRecord] = [control_record]
+        for definition in definitions:
+            self.budget.reserve(definition.id)
+            before = adapter.before_state()
+            response: AdapterResponse | None = None
+            attempt = 0
+            while True:
+                response = adapter.probe(definition)
+                decision = self.rate_limits.inspect(response.status or 0, response.headers, attempt)
+                if decision.action == "RETRY":
+                    self.sleeper(decision.delay_seconds)
+                    attempt += 1
+                    continue
+                if decision.action == "HALT":
+                    raise SafetyHalt(decision.reason)
+                break
+            after = adapter.after_state()
+            unchanged = before.complete() and after.complete() and before == after
+            appended.append(
+                self.log.append(
+                    EvidenceRecord(
+                        record_type="probe",
+                        run_id=run_id,
+                        label="OBSERVED",
+                        capability=definition.id,
+                        operation=definition.operation,
+                        response=response.response,
+                        raw_response=response.raw_response,
+                        http_status=response.status,
+                        error_code=response.error_code,
+                        outcome=response.outcome,
+                        gate=response.gate,
+                        advertised=response.advertised,
+                        granted_scope=response.granted_scope,
+                        state_before=before,
+                        state_after=after,
+                        state_unchanged=unchanged,
+                        config_sha256=config_sha256,
+                    )
+                )
+            )
+        return appended

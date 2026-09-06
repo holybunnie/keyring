@@ -1,0 +1,14 @@
+# User-supplied strategy requirements. This file does not grant authority.
+name: example-spot-strategy
+claim_label: ASSUMED
+needs:
+  account:
+    balances: true
+  trade:
+    spot:
+      symbols:
+        - BTCUSDT
+        - ETHUSDT
+  margin: false
+  futures: false
+  transfer: false
