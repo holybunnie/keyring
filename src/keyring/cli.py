@@ -44,7 +44,8 @@ def main() -> int:
         return 0
     if args.command == "classify":
         log = EvidenceLog(args.evidence)
-        classifications = classify_log(log)
+        config = load_probe_config().model
+        classifications = classify_log(log, [definition.id for definition in config.capabilities])
         strategy = load_strategy_config(args.strategy).model
         print(
             json.dumps(

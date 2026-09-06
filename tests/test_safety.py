@@ -6,7 +6,7 @@ from keyring.classifier import classify_log
 from keyring.evidence import EvidenceLog
 from keyring.labels import Classification
 from keyring.models import ProbeDefinition, StateSnapshot
-from keyring.safety import AdapterResponse, ControlFailed, ProbeBudget, RateLimitPolicy, SafeProbeRunner
+from keyring.safety import AdapterResponse, ControlFailed, ProbeBudget, RateLimitPolicy, SafeProbeRunner, SafetyHalt
 
 
 def snapshot() -> StateSnapshot:
@@ -78,3 +78,15 @@ def test_rate_policy_halts_418_and_403() -> None:
     assert policy.inspect(418).action == "HALT"
     assert policy.inspect(403).action == "HALT"
     assert policy.inspect(500).action == "INCONCLUSIVE"
+
+
+def test_halt_response_is_written_before_runner_stops(tmp_path: Path) -> None:
+    adapter = FakeAdapter([AdapterResponse(status=418, outcome="banned", raw_response='{"code":418}')])
+    log = EvidenceLog(tmp_path / "evidence.jsonl")
+    runner = SafeProbeRunner(log=log, budget=ProbeBudget(1, 1))
+    with pytest.raises(SafetyHalt):
+        runner.run_batch("run-1", adapter, [definition()])
+    records = log.records()
+    assert records[-1].record_type == "probe"
+    assert records[-1].http_status == 418
+    assert records[-1].state_unchanged is True

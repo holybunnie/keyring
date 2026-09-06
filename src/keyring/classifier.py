@@ -40,7 +40,7 @@ def _proof(record: EvidenceRecord, control: EvidenceRecord | None) -> list[dict[
     return chain
 
 
-def classify_records(records: list[EvidenceRecord]) -> list[ClassificationResult]:
+def classify_records(records: list[EvidenceRecord], capabilities: Iterable[str] | None = None) -> list[ClassificationResult]:
     controls = _control_records(records)
     grouped: dict[str, list[EvidenceRecord]] = defaultdict(list)
     for record in records:
@@ -48,7 +48,20 @@ def classify_records(records: list[EvidenceRecord]) -> list[ClassificationResult
             grouped[record.capability].append(record)
 
     results: list[ClassificationResult] = []
-    for capability, candidates in grouped.items():
+    capability_ids = set(grouped)
+    if capabilities is not None:
+        capability_ids.update(capabilities)
+    for capability in sorted(capability_ids):
+        candidates = grouped.get(capability, [])
+        if not candidates:
+            results.append(
+                ClassificationResult(
+                    capability=capability,
+                    classification=Classification.INCONCLUSIVE,
+                    reason="no capability probe evidence is present",
+                )
+            )
+            continue
         record = candidates[-1]
         control = controls.get(record.run_id)
         evidence_sequences = [record.sequence]
@@ -89,5 +102,5 @@ def classify_records(records: list[EvidenceRecord]) -> list[ClassificationResult
     return results
 
 
-def classify_log(log: EvidenceLog) -> list[ClassificationResult]:
-    return classify_records(log.records())
+def classify_log(log: EvidenceLog, capabilities: Iterable[str] | None = None) -> list[ClassificationResult]:
+    return classify_records(log.records(), capabilities)

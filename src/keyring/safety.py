@@ -64,10 +64,12 @@ class RateLimitPolicy:
         retry_after_cap_seconds: float = 60,
         backoff_base_seconds: float = 1,
         backoff_max_seconds: float = 32,
+        max_retries: int = 3,
     ):
         self.retry_after_cap_seconds = retry_after_cap_seconds
         self.backoff_base_seconds = backoff_base_seconds
         self.backoff_max_seconds = backoff_max_seconds
+        self.max_retries = max_retries
 
     def _retry_after(self, headers: dict[str, str], now: datetime | None = None) -> float | None:
         value = headers.get("Retry-After") or headers.get("retry-after")
@@ -161,21 +163,51 @@ class SafeProbeRunner:
         appended: list[EvidenceRecord] = [control_record]
         for definition in definitions:
             self.budget.reserve(definition.id)
-            before = adapter.before_state()
             response: AdapterResponse | None = None
+            final_before: StateSnapshot | None = None
+            final_after: StateSnapshot | None = None
+            halt_reason: str | None = None
             attempt = 0
-            while True:
+            while attempt <= self.rate_limits.max_retries:
+                before = adapter.before_state()
                 response = adapter.probe(definition)
+                after = adapter.after_state()
+                unchanged = before.complete() and after.complete() and before == after
                 decision = self.rate_limits.inspect(response.status or 0, response.headers, attempt)
-                if decision.action == "RETRY":
+                if decision.action == "RETRY" and attempt < self.rate_limits.max_retries:
+                    appended.append(
+                        self.log.append(
+                            EvidenceRecord(
+                                record_type="probe_attempt",
+                                run_id=run_id,
+                                label="OBSERVED",
+                                capability=definition.id,
+                                operation=definition.operation,
+                                response=response.response,
+                                raw_response=response.raw_response,
+                                http_status=response.status,
+                                error_code=response.error_code,
+                                outcome=response.outcome,
+                                gate=response.gate,
+                                advertised=response.advertised,
+                                granted_scope=response.granted_scope,
+                                state_before=before,
+                                state_after=after,
+                                state_unchanged=unchanged,
+                                config_sha256=config_sha256,
+                                metadata={"attempt": attempt, "rate_limit_action": decision.action},
+                            )
+                        )
+                    )
                     self.sleeper(decision.delay_seconds)
                     attempt += 1
                     continue
+                final_before = before
+                final_after = after
                 if decision.action == "HALT":
-                    raise SafetyHalt(decision.reason)
+                    halt_reason = decision.reason
                 break
-            after = adapter.after_state()
-            unchanged = before.complete() and after.complete() and before == after
+            assert response is not None and final_before is not None and final_after is not None
             appended.append(
                 self.log.append(
                     EvidenceRecord(
@@ -192,11 +224,14 @@ class SafeProbeRunner:
                         gate=response.gate,
                         advertised=response.advertised,
                         granted_scope=response.granted_scope,
-                        state_before=before,
-                        state_after=after,
-                        state_unchanged=unchanged,
+                        state_before=final_before,
+                        state_after=final_after,
+                        state_unchanged=final_before.complete() and final_after.complete() and final_before == final_after,
                         config_sha256=config_sha256,
+                        metadata={"attempt": attempt},
                     )
                 )
             )
+            if halt_reason is not None:
+                raise SafetyHalt(halt_reason)
         return appended
