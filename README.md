@@ -44,9 +44,13 @@ python -m pip install -e '.[dev]'
 python -m keyring validate-config
 python -m keyring classify
 python -m keyring dashboard --host 127.0.0.1 --port 8080
+# With a session obtained through a supported client:
+python -m keyring capture-tools --evidence evidence/runtime/tools-list.jsonl
 ```
 
 **OBSERVED:** The current `classify` command returns no effective capability rows because the committed evidence contains only the unauthenticated preflight. That is the expected degraded result, not a successful authority measurement.
+
+**OBSERVED:** `capture-tools` reads session values from environment variables, requests only `tools/list`, and appends the complete response to a runtime evidence file. It does not invoke an Agentic tool.
 
 **ASSUMED:** Binding the dashboard to `0.0.0.0` and deploying it would make it reachable outside the build machine; deployment is not present in this repository yet.
 

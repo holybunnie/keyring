@@ -1,7 +1,7 @@
 schema_version: 1
 claim_label: ASSUMED
 
-# These are safety and measurement policies, not Binance account facts.
+# ASSUMED: These are safety and measurement policies, not Binance account facts.
 budgets:
   max_probes_per_run: 7
   max_probes_per_minute: 2

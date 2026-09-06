@@ -1,4 +1,4 @@
-# User-supplied strategy requirements. This file does not grant authority.
+# ASSUMED: User-supplied strategy requirements. This file does not grant authority.
 name: example-spot-strategy
 claim_label: ASSUMED
 needs:

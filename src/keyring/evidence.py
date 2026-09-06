@@ -69,7 +69,7 @@ def _hash_payload(record: EvidenceRecord, prev_hash: str | None) -> str:
 
 
 class EvidenceLog:
-    """Append-only JSONL evidence with a tamper-evident hash chain."""
+    """OBSERVED: append-only JSONL evidence with a tamper-evident hash chain."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)

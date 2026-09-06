@@ -8,6 +8,7 @@ from .config import load_probe_config, load_strategy_config
 from .dashboard import serve
 from .evidence import EvidenceLog
 from .reach import least_privilege_diff
+from .agentic import AgenticSession, capture_tools_list
 
 
 def main() -> int:
@@ -27,6 +28,10 @@ def main() -> int:
     dashboard.add_argument("--strategy", default="config/strategy.yaml")
     dashboard.add_argument("--host", default="127.0.0.1")
     dashboard.add_argument("--port", type=int, default=8080)
+
+    capture = subparsers.add_parser("capture-tools", help="capture tools/list using session values from the environment")
+    capture.add_argument("--evidence", default="evidence/raw/runtime.jsonl")
+    capture.add_argument("--run-id")
 
     args = parser.parse_args()
     if args.command == "validate-config":
@@ -59,5 +64,9 @@ def main() -> int:
         return 0
     if args.command == "dashboard":
         serve(args.evidence, host=args.host, port=args.port, strategy_path=args.strategy)
+        return 0
+    if args.command == "capture-tools":
+        record = capture_tools_list(AgenticSession.from_environment(), EvidenceLog(args.evidence), run_id=args.run_id)
+        print(json.dumps(record.model_dump(mode="json"), indent=2))
         return 0
     return 2

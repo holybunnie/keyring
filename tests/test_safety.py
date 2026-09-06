@@ -78,6 +78,7 @@ def test_rate_policy_halts_418_and_403() -> None:
     assert policy.inspect(418).action == "HALT"
     assert policy.inspect(403).action == "HALT"
     assert policy.inspect(500).action == "INCONCLUSIVE"
+    assert policy.inspect(429, {"Retry-After": "120"}).delay_seconds == 120
 
 
 def test_halt_response_is_written_before_runner_stops(tmp_path: Path) -> None:

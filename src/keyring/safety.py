@@ -76,12 +76,14 @@ class RateLimitPolicy:
         if not value:
             return None
         try:
-            return max(0.0, min(float(value), self.retry_after_cap_seconds))
+            # A server-provided Retry-After value takes precedence over the
+            # local cap; the cap applies only to locally generated backoff.
+            return max(0.0, float(value))
         except ValueError:
             try:
                 parsed = email.utils.parsedate_to_datetime(value)
                 reference = now or datetime.now(timezone.utc)
-                return max(0.0, min((parsed - reference).total_seconds(), self.retry_after_cap_seconds))
+                return max(0.0, (parsed - reference).total_seconds())
             except (TypeError, ValueError, OverflowError):
                 return None
 
@@ -199,7 +201,11 @@ class SafeProbeRunner:
                             )
                         )
                     )
-                    self.sleeper(decision.delay_seconds)
+                    remaining = decision.delay_seconds
+                    while remaining > 0:
+                        delay = min(remaining, 60)
+                        self.sleeper(delay)
+                        remaining -= delay
                     attempt += 1
                     continue
                 final_before = before
