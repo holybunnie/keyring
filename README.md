@@ -112,7 +112,7 @@ Every classification regenerates from the append-only evidence log alone. Nothin
 pip install -e .
 python -m keyring authority          # rebuild the authority map from evidence
 python -m keyring validate-config    # config checksums
-python -m pytest -q                  # 0 tests
+python -m pytest -q                  # 36 tests
 ```
 
 Raw responses are in [`evidence/raw/`](evidence/raw/), verbatim and hash-chained, with credential-shaped values redacted. The full experimental record is in [`docs/m0.md`](docs/m0.md); the findings are in [`docs/findings.md`](docs/findings.md).
