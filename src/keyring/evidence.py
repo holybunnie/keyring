@@ -85,7 +85,12 @@ class EvidenceLog:
         for line_number, line in enumerate(self._raw_lines(), start=1):
             if not line.strip():
                 continue
-            raw_document = json.loads(line)
+            try:
+                raw_document = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise EvidenceIntegrityError(f"invalid JSON at line {line_number}") from exc
+            if not isinstance(raw_document, dict):
+                raise EvidenceIntegrityError(f"evidence line {line_number} is not an object")
             if raw_document.get("record_type") == "m0_preflight" and "record_hash" not in raw_document:
                 # The first M0 record predates the runtime schema and is intentionally
                 # retained verbatim as raw evidence. It is a source record, not a

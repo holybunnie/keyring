@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from keyring.classifier import classify_log
-from keyring.evidence import EvidenceLog
+from keyring.evidence import EvidenceIntegrityError, EvidenceLog
 from keyring.labels import Classification
 from keyring.models import EvidenceRecord, StateSnapshot
 
@@ -105,3 +105,14 @@ def test_classifier_refuses_a_probe_without_state_proof(tmp_path: Path) -> None:
         ]
     )
     assert classify_log(log)[0].classification == Classification.INCONCLUSIVE
+
+
+def test_malformed_json_is_not_silently_ignored(tmp_path: Path) -> None:
+    path = tmp_path / "evidence.jsonl"
+    path.write_text("{not-json}\n")
+    try:
+        EvidenceLog(path).records()
+    except EvidenceIntegrityError as exc:
+        assert "invalid JSON" in str(exc)
+    else:
+        raise AssertionError("malformed evidence must fail closed")

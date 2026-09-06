@@ -98,7 +98,13 @@ table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;border-bottom
     return document.encode("utf-8")
 
 
-def serve(evidence_path: str | Path, *, host: str = "127.0.0.1", port: int = 8080, strategy_path: str | Path = "config/strategy.yaml") -> None:
+def create_server(
+    evidence_path: str | Path,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    strategy_path: str | Path = "config/strategy.yaml",
+) -> ThreadingHTTPServer:
     state = dashboard_state(evidence_path, strategy_path)
 
     class Handler(BaseHTTPRequestHandler):
@@ -124,7 +130,11 @@ def serve(evidence_path: str | Path, *, host: str = "127.0.0.1", port: int = 808
         def log_message(self, format: str, *args: object) -> None:
             return
 
-    server = ThreadingHTTPServer((host, port), Handler)
+    return ThreadingHTTPServer((host, port), Handler)
+
+
+def serve(evidence_path: str | Path, *, host: str = "127.0.0.1", port: int = 8080, strategy_path: str | Path = "config/strategy.yaml") -> None:
+    server = create_server(evidence_path, host=host, port=port, strategy_path=strategy_path)
     print(f"KEYRING dashboard listening on {host}:{port}")
     try:
         server.serve_forever()
