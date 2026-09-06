@@ -48,12 +48,35 @@ class FakeAdapter:
 def test_runner_requires_positive_control(tmp_path: Path) -> None:
     adapter = FakeAdapter(
         [AdapterResponse(status=200, outcome="downstream_validation", error_code="-1013")],
-        control=AdapterResponse(status=403, outcome="failure"),
+        control=AdapterResponse(status=400, outcome="failure"),
     )
     runner = SafeProbeRunner(log=EvidenceLog(tmp_path / "evidence.jsonl"), budget=ProbeBudget(1, 1))
     with pytest.raises(ControlFailed):
         runner.run_batch("run-1", adapter, [definition()])
     assert adapter.probe_calls == 0
+
+
+def test_control_retries_rate_limit_before_probing(tmp_path: Path) -> None:
+    class ControlRetryAdapter(FakeAdapter):
+        def __init__(self):
+            super().__init__([AdapterResponse(status=200, outcome="downstream_validation", error_code="-1013")])
+            self.controls = iter(
+                [
+                    AdapterResponse(status=429, outcome="rate_limited", headers={"Retry-After": "2"}),
+                    AdapterResponse(status=200, outcome="success"),
+                ]
+            )
+
+        def positive_control(self) -> AdapterResponse:
+            return next(self.controls)
+
+    sleeps: list[float] = []
+    adapter = ControlRetryAdapter()
+    log = EvidenceLog(tmp_path / "evidence.jsonl")
+    SafeProbeRunner(log=log, budget=ProbeBudget(1, 1), sleeper=sleeps.append).run_batch("run-1", adapter, [definition()])
+    assert sleeps == [2.0]
+    assert log.records()[0].record_type == "positive_control_attempt"
+    assert adapter.probe_calls == 1
 
 
 def test_runner_retries_429_and_classifies_validation(tmp_path: Path) -> None:

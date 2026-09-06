@@ -143,24 +143,56 @@ class SafeProbeRunner:
         self.sleeper = sleeper
 
     def run_batch(self, run_id: str, adapter: ProbeAdapter, definitions: Iterable[ProbeDefinition], config_sha256: str | None = None) -> list[EvidenceRecord]:
-        control = adapter.positive_control()
-        control_record = self.log.append(
-            EvidenceRecord(
-                record_type="positive_control",
-                run_id=run_id,
-                label="OBSERVED",
-                operation="account_read",
-                response=control.response,
-                raw_response=control.raw_response,
-                http_status=control.status,
-                error_code=control.error_code,
-                outcome=control.outcome,
-                control_passed=control.outcome == "success" and (control.status is None or 200 <= control.status < 300),
-                config_sha256=config_sha256,
+        control_attempt = 0
+        while True:
+            control = adapter.positive_control()
+            control_decision = self.rate_limits.inspect(control.status or 0, control.headers, control_attempt)
+            control_passed = control.outcome == "success" and (control.status is None or 200 <= control.status < 300)
+            if control_decision.action == "RETRY" and control_attempt < self.rate_limits.max_retries:
+                self.log.append(
+                    EvidenceRecord(
+                        record_type="positive_control_attempt",
+                        run_id=run_id,
+                        label="OBSERVED",
+                        operation="account_read",
+                        response=control.response,
+                        raw_response=control.raw_response,
+                        http_status=control.status,
+                        error_code=control.error_code,
+                        outcome=control.outcome,
+                        control_passed=False,
+                        config_sha256=config_sha256,
+                        metadata={"attempt": control_attempt, "rate_limit_action": control_decision.action},
+                    )
+                )
+                remaining = control_decision.delay_seconds
+                while remaining > 0:
+                    delay = min(remaining, 60)
+                    self.sleeper(delay)
+                    remaining -= delay
+                control_attempt += 1
+                continue
+            control_record = self.log.append(
+                EvidenceRecord(
+                    record_type="positive_control",
+                    run_id=run_id,
+                    label="OBSERVED",
+                    operation="account_read",
+                    response=control.response,
+                    raw_response=control.raw_response,
+                    http_status=control.status,
+                    error_code=control.error_code,
+                    outcome=control.outcome,
+                    control_passed=control_passed,
+                    config_sha256=config_sha256,
+                    metadata={"attempt": control_attempt, "rate_limit_action": control_decision.action},
+                )
             )
-        )
-        if control_record.control_passed is not True:
-            raise ControlFailed("positive control failed; probe batch discarded")
+            if control_decision.action == "HALT":
+                raise SafetyHalt(control_decision.reason)
+            if control_decision.action == "INCONCLUSIVE" or control_record.control_passed is not True:
+                raise ControlFailed("positive control failed; probe batch discarded")
+            break
 
         appended: list[EvidenceRecord] = [control_record]
         for definition in definitions:
