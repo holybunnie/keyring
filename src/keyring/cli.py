@@ -29,11 +29,23 @@ def main() -> int:
     dashboard.add_argument("--host", default="127.0.0.1")
     dashboard.add_argument("--port", type=int, default=8080)
 
+    authority = subparsers.add_parser(
+        "authority", help="regenerate the effective authority map from the evidence log alone"
+    )
+    authority.add_argument("--evidence-dir", default="evidence/raw")
+    authority.add_argument("--json", action="store_true")
+
     capture = subparsers.add_parser("capture-tools", help="capture tools/list using session values from the environment")
     capture.add_argument("--evidence", default="evidence/raw/runtime.jsonl")
     capture.add_argument("--run-id")
 
     args = parser.parse_args()
+    if args.command == "authority":
+        from .authority import derive, render
+
+        result = derive(args.evidence_dir)
+        print(json.dumps(result, indent=2) if args.json else render(result))
+        return 0
     if args.command == "validate-config":
         probes = load_probe_config(args.probes)
         strategy = load_strategy_config(args.strategy)

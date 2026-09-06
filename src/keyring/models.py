@@ -23,8 +23,20 @@ class StateSnapshot(BaseModel):
     open_orders: Any = None
     digest: str | None = None
 
+    # Every component read that composed this snapshot, keyed by component id.
+    components: Any = None
+    # Component ids that were required but could not be captured. A non-empty
+    # list means the Law 3 proof is incomplete and the probe must be discarded.
+    missing: Any = None
+
     def complete(self) -> bool:
-        return self.captured and self.balances is not None and self.positions is not None and self.open_orders is not None
+        return (
+            self.captured
+            and self.balances is not None
+            and self.positions is not None
+            and self.open_orders is not None
+            and not self.missing
+        )
 
 
 class EvidenceRecord(BaseModel):

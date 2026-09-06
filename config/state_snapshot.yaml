@@ -1,0 +1,100 @@
+schema_version: 1
+claim_label: ASSUMED
+
+# ASSUMED: this is a measurement policy, not a Binance account fact.
+#
+# Every entry is a READ tool advertised by the Binance Agentic gateway. Together
+# they compose the financial state that Law 3 requires to be proved unchanged
+# before and after every probe. None of these tools can create, amend, cancel or
+# transfer state.
+#
+# Law 3 requires balances, positions and open orders. Each component below is
+# tagged with the part of that triple it satisfies, so an incomplete snapshot
+# names precisely which leg is missing rather than failing opaquely.
+
+components:
+  - id: spot_account
+    tool: spot.getAccount
+    arguments: {}
+    satisfies: balances
+    required: true
+
+  - id: spot_open_orders
+    tool: spot.getOpenOrders
+    arguments: {}
+    satisfies: open_orders
+    required: true
+
+  - id: wallet_balances
+    tool: wallet.queryUserWalletBalance
+    arguments: {}
+    satisfies: balances
+    required: true
+
+  - id: wallet_all_coins
+    tool: wallet.allCoinsInformation
+    arguments: {}
+    satisfies: balances
+    required: false
+
+  - id: usds_positions
+    tool: futures_usds.positionInformationV2
+    arguments: {}
+    satisfies: positions
+    required: true
+
+  - id: usds_balance
+    tool: futures_usds.futuresAccountBalanceV3
+    arguments: {}
+    satisfies: balances
+    required: false
+
+  - id: usds_open_orders
+    tool: futures_usds.currentAllOpenOrders
+    arguments: {}
+    satisfies: open_orders
+    required: true
+
+  - id: coinm_positions
+    tool: futures_coin.positionInformation
+    arguments: {}
+    satisfies: positions
+    required: true
+
+  - id: coinm_balance
+    tool: futures_coin.futuresAccountBalance
+    arguments: {}
+    satisfies: balances
+    required: false
+
+  - id: coinm_open_orders
+    tool: futures_coin.currentAllOpenOrders
+    arguments: {}
+    satisfies: open_orders
+    required: true
+
+  - id: margin_account
+    tool: margin.queryCrossMarginAccountDetails
+    arguments: {}
+    satisfies: balances
+    required: false
+
+  - id: margin_open_orders
+    tool: margin.queryMarginAccountsOpenOrders
+    arguments: {}
+    satisfies: open_orders
+    required: false
+
+  - id: spot_trade_history_head
+    tool: spot.myTrades
+    arguments:
+      symbol: BTCUSDT
+      limit: 10
+    satisfies: history
+    required: false
+
+  - id: convert_open_orders
+    tool: convert.queryLimitOpenOrders
+    arguments: {}
+    satisfies: open_orders
+    required: false
