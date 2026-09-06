@@ -112,7 +112,11 @@ def test_every_documented_command_runs(published):
     import subprocess
     import sys
 
-    commands = sorted(set(re.findall(r"python -m keyring ([a-z-]+)", published)))
+    # `dashboard` is a long-running server; it is covered by the dashboard tests.
+    long_running = {"dashboard"}
+    commands = sorted(
+        set(re.findall(r"python -m keyring ([a-z-]+)", published)) - long_running
+    )
     assert commands, "README documents no keyring commands"
     for command in commands:
         result = subprocess.run(

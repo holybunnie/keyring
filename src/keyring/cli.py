@@ -24,7 +24,7 @@ def main() -> int:
     classify.add_argument("--strategy", default="config/strategy.yaml")
 
     dashboard = subparsers.add_parser("dashboard")
-    dashboard.add_argument("--evidence", default="evidence/raw/0001-m0-preflight.jsonl")
+    dashboard.add_argument("--evidence", default="evidence/raw")
     dashboard.add_argument("--strategy", default="config/strategy.yaml")
     dashboard.add_argument("--host", default="127.0.0.1")
     dashboard.add_argument("--port", type=int, default=8080)

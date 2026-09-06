@@ -216,6 +216,7 @@ python -m keyring authority          # rebuild the authority map from evidence
 python -m keyring least-privilege    # diff the manifest against the measurement
 python -m keyring financial-reach    # layered capital view
 python -m keyring validate-config    # config checksums
+python -m keyring dashboard          # read-only dashboard on 127.0.0.1:8080
 python -m pytest -q                  # full suite
 ```
 
