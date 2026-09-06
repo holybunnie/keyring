@@ -15,7 +15,12 @@ Two independent observations:
 | Path | Confirmation | Evidence |
 |---|---|---|
 | Direct call to the gateway with a valid session token | **none** | `evidence/raw/0007` |
-| **Claude Code**, a DOCUMENTED supported client, at its default settings | **none** | `evidence/raw/0010` |
+| **Claude Code**, a DOCUMENTED supported client, **default settings** | **none** | `evidence/raw/0010` |
+| **Claude Code**, same client and credential, **`--permission-mode manual`** | **prompts** | `evidence/raw/0010` |
+
+**OBSERVED:** The third row differs from the second in exactly one variable: the client's permission mode. Same client, same credential, same order.
+
+**OBSERVED:** The confirmation Binance documents is therefore not a property of the system. It is a client-side setting, and the client's default is the permissive one.
 
 **OBSERVED:** `spot.newOrder` reached Binance's order-filter validation and returned `-1013 Filter failure: PERCENT_PRICE_BY_SIDE`. The operator was never asked to approve anything, in either path.
 
@@ -33,7 +38,9 @@ The finding is narrower, and does not depend on any weakness:
 
 **ASSUMED:** That the confirmation is therefore a client-side and client-configuration-side property. Two observations support it. Six supported clients remain unmeasured, and the grid that would establish it is specified in [`client-matrix.md`](client-matrix.md).
 
-**ASSUMED:** That a different Claude Code permission mode, or a larger or fillable order, would also produce no prompt. Untested. The client's own description of its default mode says it assesses each call and runs the ones it judges lower-risk, so a different order may well be treated differently. Row 2 establishes default behaviour for this order only.
+**OBSERVED:** The permission-mode confound is closed. Under `--permission-mode manual` the same client asked before invoking; under its default it did not. The absence of a prompt was a function of the client's default configuration, not of the order being small.
+
+**ASSUMED:** That a larger or fillable order would also produce no prompt under the default mode. Untested, and deliberately so: testing it would require an order capable of executing, which Part XIV forbids and which would forfeit the zero-state-change property.
 
 **OBSERVED:** What a user cannot do is see any of this. No screen in the authorization flow states which client enforces confirmation, or that the choice of client and its settings determines whether the promise holds.
 

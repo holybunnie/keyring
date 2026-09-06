@@ -55,7 +55,8 @@ Each row is produced by the same fixed procedure, so the rows are comparable.
 | # | Client | Granted scope | Advertised write tools | Probe result | GATE | Evidence |
 |---|---|---|---|---|---|---|
 | 1 | **Direct gateway call** (no client) | `mcp:account:read mcp:futures:trade mcp:spot:trade` | 11 | `-1013` filter failure | **NONE — OBSERVED** | `evidence/raw/0007` |
-| 2 | **Claude Code** (documented supported client) | `mcp:account:read mcp:futures:trade mcp:spot:trade` | 11 | ran; no prompt | **NONE — OBSERVED** | `evidence/raw/0010` |
+| 2 | **Claude Code**, default mode | `mcp:account:read mcp:futures:trade mcp:spot:trade` | 11 | ran; no prompt | **NONE — OBSERVED** | `evidence/raw/0010` |
+| 2b | **Claude Code**, `--permission-mode manual` | same credential | 11 | asked first; operator declined | **CLIENT — OBSERVED** | `evidence/raw/0010` |
 | 3 | Claude Desktop | — | — | — | **NOT OBSERVED** | — |
 | 4 | Codex CLI | — | — | — | **NOT OBSERVED** | — |
 | 5 | ChatGPT on the web | — | — | — | **NOT OBSERVED** | — |
@@ -71,7 +72,9 @@ Each row is produced by the same fixed procedure, so the rows are comparable.
 
 **OBSERVED:** No `allowedTools` entries and no `defaultMode` override were configured for this project, so the client was running its default permission mode. This is out-of-the-box behaviour, not a setting the operator had weakened.
 
-**ASSUMED:** That a different Claude Code permission mode would also decline to prompt. Untested. Row 2 establishes default behaviour only.
+**OBSERVED — row 2b.** The same client, same credential and same order under `--permission-mode manual` **did** ask before invoking. The only variable changed was the client's permission mode.
+
+**OBSERVED:** Rows 2 and 2b together show the confirmation is a client-side setting whose default is permissive, rather than a property of the gateway.
 
 **INCONCLUSIVE:** Rows 3 through 8 are unfilled. Two rows now exist, but row 1 is the gateway baseline rather than a client, so **no claim that protection varies *between clients* may be published.** What rows 1 and 2 jointly support is stated below.
 
