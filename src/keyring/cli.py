@@ -29,6 +29,13 @@ def main() -> int:
     dashboard.add_argument("--host", default="127.0.0.1")
     dashboard.add_argument("--port", type=int, default=8080)
 
+    leastpriv = subparsers.add_parser(
+        "least-privilege", help="diff the strategy manifest against the measured fingerprint"
+    )
+    leastpriv.add_argument("--strategy", default="config/strategy.yaml")
+    leastpriv.add_argument("--evidence-dir", default="evidence/raw")
+    leastpriv.add_argument("--json", action="store_true")
+
     authority = subparsers.add_parser(
         "authority", help="regenerate the effective authority map from the evidence log alone"
     )
@@ -40,6 +47,12 @@ def main() -> int:
     capture.add_argument("--run-id")
 
     args = parser.parse_args()
+    if args.command == "least-privilege":
+        from .leastprivilege import diff as lp_diff, render as lp_render
+
+        result = lp_diff(args.strategy, args.evidence_dir)
+        print(json.dumps(result, indent=2) if args.json else lp_render(result))
+        return 0
     if args.command == "authority":
         from .authority import derive, render
 

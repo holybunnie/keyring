@@ -111,6 +111,57 @@ chain unbroken         True
 
 **ASSUMED:** A different account — one without futures enabled — would produce the denial Run C was designed to find. Untested here.
 
+## Least-privilege diff (F3)
+
+**OBSERVED:** The strategy's needs are read from its checksummed manifest, `config/strategy.yaml`. They are never inferred from a model.
+
+```
+LEAST-PRIVILEGE DIFF — example-spot-strategy
+  derived from 109 evidence records
+  granted scope   mcp:account:read mcp:futures:trade mcp:spot:trade
+
+NEEDED       (declared in the manifest, never inferred)
+  capabilities   spot
+  instruments    2  (BTCUSDT, ETHUSDT)
+
+EFFECTIVE    (measured, VERIFIED by probe with a passing control)
+  capabilities   coin_m_futures, spot, usd_m_futures
+
+EXCESS — MEASURED
+  capabilities   coin_m_futures, usd_m_futures
+  write tools    8
+    futures_coin.cancelOrder
+    futures_coin.changeInitialLeverage
+    futures_coin.changeMarginType
+    futures_coin.newOrder
+    futures_usds.cancelOrder
+    futures_usds.changeInitialLeverage
+    futures_usds.changeMarginType
+    futures_usds.newOrder
+
+EXCESS — POTENTIAL  (POTENTIAL_SURFACE_ONLY)
+  venue lists    1362 spot instruments trading
+  strategy needs 2
+  excess         1360  — OBSERVED (venue listing), NOT measured reach
+
+REMEDIATION COST
+  RECONNECT_REQUIRED  — OBSERVED
+  An over-broad grant cannot be narrowed. It must be disconnected
+  and re-authorized from scratch.
+```
+
+**OBSERVED — measured excess.** 2 entire product families the manifest explicitly declines are VERIFIED on this grant, exposing 8 write tools the strategy has no use for. This is measured: each was probed, each reached order validation, each had a passing positive control and an identical state digest.
+
+**OBSERVED (venue listing), NOT measured reach — potential excess.** The venue lists 1,362 spot instruments trading. The manifest needs 2. **This is not presented as effective authority.** Only the probed symbol has measured evidence behind it, and Part IX forbids printing a listed instrument count as measured reach. The two excess figures are reported separately and are never added together.
+
+**OBSERVED — the remediation cost is measured, not asserted.** Narrowing this grant is not an edit. `RECONNECT_REQUIRED` means the agent must be disconnected and re-authorized from scratch, and the value is read from the evidence log rather than written by hand.
+
+**Reproduce it:**
+
+```bash
+python -m keyring least-privilege
+```
+
 ## Limits
 
 **INCONCLUSIVE:** M0.5, whether permissions can be narrowed in place, is not resolved. It requires an action in the Binance web UI that this build cannot perform.
