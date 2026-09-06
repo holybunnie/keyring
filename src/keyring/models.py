@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -76,7 +76,7 @@ class ProbeDefinition(BaseModel):
     scope: str
     product: str
     operation: str
-    probe_policy: str
+    probe_policy: Literal["non_executing_only"]
     symbol_source: str
     threshold_source: str
 

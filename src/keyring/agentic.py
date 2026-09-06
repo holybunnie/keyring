@@ -77,7 +77,19 @@ def capture_tools_list(
     run_id = run_id or datetime.now(timezone.utc).strftime("tools-list-%Y%m%dT%H%M%SZ")
     client = JsonRpcClient(session, transport=transport)
     try:
-        response = client.tools_list()
+        try:
+            response = client.tools_list()
+        except httpx.HTTPError:
+            return log.append(
+                EvidenceRecord(
+                    record_type="tools_list",
+                    run_id=run_id,
+                    label="OBSERVED",
+                    operation="tools/list",
+                    outcome="transport_error",
+                    metadata={"response_received": False},
+                )
+            )
         try:
             parsed: Any = response.json()
         except json.JSONDecodeError:

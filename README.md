@@ -35,6 +35,8 @@
 
 **OBSERVED:** `src/keyring/dashboard.py` serves only `GET /` and `GET /api/state`; its `POST` path returns `405`. It renders labels and proof-derived reasons beside classifications.
 
+**OBSERVED:** The data flow and current live-session boundary are documented in [`docs/architecture.md`](docs/architecture.md).
+
 **ASSUMED:** The exact Agentic JSON-RPC envelope and tool names are unresolved until an authenticated `tools/list` response is captured. The generic transport in `src/keyring/agentic.py` does not invent them.
 
 ## Run locally

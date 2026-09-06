@@ -25,6 +25,11 @@ def dashboard_state(evidence_path: str | Path, strategy_path: str | Path = "conf
     verified = any(item.classification.value == "VERIFIED" for item in classifications)
     last_rate_limit = next((record for record in reversed(records) if record.http_status in {429, 418, 403}), None)
     used = sum(1 for record in records if record.record_type in {"probe", "capability_probe"})
+    rate_limit_status = "HEALTHY"
+    if last_rate_limit and last_rate_limit.http_status in {403, 418}:
+        rate_limit_status = "HALTED"
+    elif last_rate_limit and last_rate_limit.http_status == 429:
+        rate_limit_status = "THROTTLED"
     return {
         "status": "MEASURED" if verified else "DEGRADED",
         "status_label": "OBSERVED",
@@ -39,7 +44,7 @@ def dashboard_state(evidence_path: str | Path, strategy_path: str | Path = "conf
             "label": "OBSERVED",
         },
         "rate_limit": {
-            "status": "HALTED" if last_rate_limit and last_rate_limit.http_status in {403, 418} else "HEALTHY",
+            "status": rate_limit_status,
             "last_event": last_rate_limit.http_status if last_rate_limit else None,
             "label": "OBSERVED",
         },

@@ -164,6 +164,8 @@ class SafeProbeRunner:
 
         appended: list[EvidenceRecord] = [control_record]
         for definition in definitions:
+            if definition.probe_policy != "non_executing_only":
+                raise ProbeSafetyError(f"unsupported probe policy: {definition.probe_policy}")
             self.budget.reserve(definition.id)
             response: AdapterResponse | None = None
             final_before: StateSnapshot | None = None
