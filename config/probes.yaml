@@ -44,7 +44,7 @@ capabilities:
     operation: order_validation
     probe_policy: non_executing_only
     symbol_source: exchangeInfo
-    threshold_source: exchangeInfo.filters.MIN_NOTIONAL
+    threshold_source: exchangeInfo.filters.MIN_NOTIONAL-or-PRICE_FILTER
   - id: transfer
     scope: transfer
     product: internal Agentic sub-account transfer

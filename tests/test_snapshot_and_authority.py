@@ -135,6 +135,7 @@ def test_write_tool_name_classification(name, expected):
 
 
 def test_only_observed_error_codes_are_classified():
+    assert classify_error_code("-1100") == "VERIFIED"
     assert classify_error_code("-1013") == "VERIFIED"
     assert classify_error_code("-4013") == "VERIFIED"
     assert classify_error_code("-1111") == "VERIFIED"
@@ -142,6 +143,32 @@ def test_only_observed_error_codes_are_classified():
     # An unobserved code is never assumed into a class.
     assert classify_error_code("-9999") == "INCONCLUSIVE"
     assert classify_error_code(None) == "INCONCLUSIVE"
+
+
+def test_authority_reports_probe_pair_identity_separately_from_snapshot_identity(tmp_path):
+    log = EvidenceLog(tmp_path / "evidence.jsonl")
+    before = snapshot({"wallet": {"metadata": "first"}})
+    after = snapshot({"wallet": {"metadata": "first"}})
+    log.append(
+        EvidenceRecord(
+            record_type="capability_probe",
+            run_id="run-1",
+            label="OBSERVED",
+            capability="spot",
+            operation="spot.newOrder",
+            raw_response='{"code":-1100,"msg":"parameter rejection"}',
+            error_code="-1100",
+            outcome="INCONCLUSIVE",
+            control_passed=True,
+            state_before=before,
+            state_after=after,
+            state_unchanged=True,
+        )
+    )
+    result = derive(tmp_path)
+    assert result["probe_pairs"] == 1
+    assert result["probe_pairs_identical"] is True
+    assert result["state_identical_throughout"] is True
 
 
 def test_binance_code_extraction_ignores_the_jsonrpc_envelope():

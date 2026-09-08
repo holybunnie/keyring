@@ -8,6 +8,7 @@ its proposal before a separate deterministic probe path can do anything.
 from __future__ import annotations
 
 import os
+import subprocess
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -83,4 +84,63 @@ class ClaudeMessagesModel:
         )
         if not text:
             raise ModelError("Claude returned no text content")
+        return text
+
+
+@dataclass
+class ClaudeCodeModel:
+    """Use the logged-in Claude Code CLI as a text-only planning model.
+
+    The invocation disables built-in tools and ignores configured MCP servers.
+    It receives the planner prompt as text only; no Binance session or tool
+    definition is passed to the CLI.
+    """
+
+    model: str = "haiku"
+    executable: str = "claude"
+    timeout_seconds: float = 90
+
+    def close(self) -> None:
+        """Match the API adapter lifecycle; the CLI owns no open client here."""
+        return None
+
+    def complete(self, *, system: str, user: str) -> str:
+        command = [
+            self.executable,
+            "--print",
+            "--safe-mode",
+            "--no-session-persistence",
+            "--strict-mcp-config",
+            "--tools",
+            "",
+            "--permission-prompts",
+            "none",
+            "--permission-mode",
+            "plan",
+            "--output-format",
+            "text",
+            "--model",
+            self.model,
+            "--system-prompt",
+            system,
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                input=user,
+                text=True,
+                capture_output=True,
+                timeout=self.timeout_seconds,
+                check=False,
+            )
+        except FileNotFoundError as error:
+            raise ModelError(f"Claude Code executable not found: {self.executable}") from error
+        except subprocess.TimeoutExpired as error:
+            raise ModelError("Claude Code model request timed out") from error
+        if result.returncode != 0:
+            detail = result.stderr.strip().splitlines()[-1] if result.stderr.strip() else "unknown error"
+            raise ModelError(f"Claude Code request failed: {detail[:240]}")
+        text = result.stdout.strip()
+        if not text:
+            raise ModelError("Claude Code returned no text content")
         return text

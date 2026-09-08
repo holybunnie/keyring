@@ -170,13 +170,41 @@ def derive(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
         if record.state_after and record.state_after.digest
     ]
 
+    probe_records = [
+        record
+        for record in records
+        if record.record_type == "capability_probe"
+    ]
+    probe_pairs = [
+        record
+        for record in probe_records
+        if record.state_before is not None and record.state_after is not None
+    ]
+    probe_pairs_identical = bool(probe_pairs) and all(
+        record.state_unchanged is True
+        and record.state_before is not None
+        and record.state_after is not None
+        and record.state_before.digest == record.state_after.digest
+        and record.state_before.complete()
+        and record.state_after.complete()
+        for record in probe_pairs
+    )
+
     return {
         "evidence_files": [str(p) for p in paths],
         "records_replayed": len(records),
         "granted_scope": latest_scope,
         "state_digests_seen": len(digests),
         "distinct_states": len(set(digests)),
+        # This older field describes whether every captured snapshot across all
+        # files was byte-for-byte identical. Separate sessions can legitimately
+        # contain different optional metadata, so it is not the probe proof.
         "state_identical_throughout": len(set(digests)) <= 1,
+        # The safety claim is per probe: the complete before/after pair for
+        # every probe must match. This remains true when two independent runs
+        # capture different account metadata.
+        "probe_pairs": len(probe_pairs),
+        "probe_pairs_identical": probe_pairs_identical,
         "capabilities": {
             name: {
                 "advertised_write_tools": row.advertised_write_tools,

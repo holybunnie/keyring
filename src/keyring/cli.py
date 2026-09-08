@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -66,6 +67,11 @@ def main() -> int:
     plan.add_argument("--discovered-tools", help="JSON file containing discovered tool names")
     plan.add_argument("--history", help="JSON file containing prior probe records")
     plan.add_argument("--model-assisted", action="store_true", help="use the explicitly configured Claude model")
+    plan.add_argument(
+        "--claude-code",
+        action="store_true",
+        help="use the logged-in Claude Code CLI as the text-only model",
+    )
     plan.add_argument("--max-attempts", type=int, default=2)
 
     interpret = subparsers.add_parser(
@@ -77,6 +83,11 @@ def main() -> int:
     interpret.add_argument("--outcome")
     interpret.add_argument("--context", help="JSON file containing interpretation context")
     interpret.add_argument("--model-assisted", action="store_true", help="use the explicitly configured Claude model")
+    interpret.add_argument(
+        "--claude-code",
+        action="store_true",
+        help="use the logged-in Claude Code CLI as the text-only model",
+    )
 
     trace_cmd = subparsers.add_parser("trace", help="rebuild evidence-backed permission traces")
     trace_cmd.add_argument("--evidence-dir", default="evidence/raw")
@@ -138,7 +149,7 @@ def main() -> int:
         return 0
     if args.command == "plan-probe":
         from .agent import KeyringAgent
-        from .model_client import ClaudeMessagesModel
+        from .model_client import ClaudeCodeModel, ClaudeMessagesModel
 
         def load_json(path: str) -> object:
             text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
@@ -156,7 +167,13 @@ def main() -> int:
             raise ValueError("--discovered-tools must contain a JSON list")
         if not isinstance(history, list):
             raise ValueError("--history must contain a JSON list")
-        model = ClaudeMessagesModel.from_environment() if args.model_assisted else None
+        if args.model_assisted and args.claude_code:
+            parser.error("choose one of --model-assisted or --claude-code")
+        model = None
+        if args.claude_code:
+            model = ClaudeCodeModel(model=os.environ.get("KEYRING_MODEL", "haiku"))
+        elif args.model_assisted:
+            model = ClaudeMessagesModel.from_environment()
         try:
             planned = KeyringAgent(model, max_attempts=args.max_attempts).plan_probe(
                 capability=args.capability,
@@ -174,7 +191,7 @@ def main() -> int:
         return 0
     if args.command == "interpret-response":
         from .interpreter import ResponseInterpreter
-        from .model_client import ClaudeMessagesModel
+        from .model_client import ClaudeCodeModel, ClaudeMessagesModel
 
         raw_response = (
             sys.stdin.read()
@@ -187,7 +204,13 @@ def main() -> int:
             if not isinstance(context_value, dict):
                 raise ValueError("--context must contain a JSON object")
             context = context_value
-        model = ClaudeMessagesModel.from_environment() if args.model_assisted else None
+        if args.model_assisted and args.claude_code:
+            parser.error("choose one of --model-assisted or --claude-code")
+        model = None
+        if args.claude_code:
+            model = ClaudeCodeModel(model=os.environ.get("KEYRING_MODEL", "haiku"))
+        elif args.model_assisted:
+            model = ClaudeMessagesModel.from_environment()
         try:
             result = ResponseInterpreter(model).interpret(
                 raw_response=raw_response,

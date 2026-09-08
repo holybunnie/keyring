@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+import subprocess
 
 import httpx
 import pytest
 
 from keyring.agent import KeyringAgent
 from keyring.interpreter import ResponseInterpreter
-from keyring.model_client import ClaudeMessagesModel
+from keyring.model_client import ClaudeCodeModel, ClaudeMessagesModel
 from keyring.mcp import Budget, ToolResult
 from keyring.evidence import EvidenceLog
 from keyring.session import Session
@@ -34,6 +35,18 @@ FILTERS = [
     {"filterType": "LOT_SIZE", "minQty": "0.00001"},
     {"filterType": "MIN_NOTIONAL", "minNotional": "5"},
 ]
+COIN_FILTERS = [
+    {"filterType": "PRICE_FILTER", "minPrice": "1000", "maxPrice": "4520958", "tickSize": "0.1"},
+    {"filterType": "LOT_SIZE", "minQty": "1", "maxQty": "1000000", "stepSize": "1"},
+]
+COIN_SCHEMA = {
+    "name": "futures_coin.newOrder",
+    "inputSchema": {
+        "type": "object",
+        "properties": {"symbol": {}, "side": {}, "type": {}, "quantity": {}, "price": {}},
+        "required": ["symbol", "side", "type"],
+    },
+}
 
 
 class FakeModel:
@@ -92,6 +105,74 @@ def test_validator_rejects_an_executable_sized_proposal() -> None:
     result = validate_proposal(proposal, TOOL_SCHEMA, FILTERS, discovered_tool_names=["spot.newOrder"])
     assert result.valid is False
     assert any("not below" in reason for reason in result.reasons)
+
+
+def test_validator_accepts_a_coinm_price_filter_probe_without_notional_filter() -> None:
+    proposal = ProbeProposal(
+        tool_name="futures_coin.newOrder",
+        arguments={
+            "symbol": "BTCUSD_PERP",
+            "side": "BUY",
+            "type": "LIMIT",
+            "quantity": "1",
+            "price": "500",
+        },
+        symbol="BTCUSD_PERP",
+        expected_filter="PRICE_FILTER",
+        justification="price is below the live minimum price",
+        planned_by="model",
+    )
+    result = validate_proposal(
+        proposal,
+        COIN_SCHEMA,
+        COIN_FILTERS,
+        discovered_tool_names=["futures_coin.newOrder"],
+    )
+    assert result.valid
+    assert result.violated_filters == ("PRICE_FILTER",)
+
+
+def test_static_planner_uses_coinm_price_filter_when_notional_is_absent() -> None:
+    proposal = ProbePlanner().plan(
+        capability="coin_m_futures",
+        tool_schema=COIN_SCHEMA,
+        symbol="BTCUSD_PERP",
+        filters=COIN_FILTERS,
+        discovered_tool_names=["futures_coin.newOrder"],
+    )
+    assert proposal.expected_filter == "PRICE_FILTER"
+    assert validate_proposal(proposal, COIN_SCHEMA, COIN_FILTERS).valid
+
+
+def test_model_numeric_arguments_are_normalized_before_the_probe() -> None:
+    model = FakeModel(
+        [
+            json.dumps(
+                {
+                    "tool_name": "spot.newOrder",
+                    "arguments": {
+                        "symbol": "BTCUSDT",
+                        "side": "BUY",
+                        "type": "LIMIT",
+                        "quantity": 1e-6,
+                        "price": 10000.0,
+                    },
+                    "symbol": "BTCUSDT",
+                    "expected_filter": "LOT_SIZE",
+                    "justification": "quantity is below the live lot-size minimum",
+                }
+            )
+        ]
+    )
+    proposal = ProbePlanner(model).plan(
+        capability="spot",
+        tool_schema=TOOL_SCHEMA,
+        symbol="BTCUSDT",
+        filters=FILTERS,
+        discovered_tool_names=["spot.newOrder"],
+    )
+    assert proposal.arguments["quantity"] == "0.000001"
+    assert proposal.arguments["price"] == "10000.0"
 
 
 def test_model_proposal_is_replanned_until_the_deterministic_gate_accepts_it() -> None:
@@ -191,6 +272,26 @@ def test_claude_adapter_is_text_only_and_returns_message_content() -> None:
     assert body["model"] == "claude-test"
     assert "tools" not in body
     assert body["messages"] == [{"role": "user", "content": "user"}]
+
+
+def test_claude_code_adapter_disables_tools_and_returns_text(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_run(command, *, input, text, capture_output, timeout, check):
+        seen["command"] = command
+        seen["input"] = input
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    model = ClaudeCodeModel(model="haiku", executable="claude-test")
+    assert model.complete(system="system", user="user") == "{}"
+    model.close()
+    command = seen["command"]
+    assert isinstance(command, list)
+    assert command[0] == "claude-test"
+    assert "--tools" in command and command[command.index("--tools") + 1] == ""
+    assert "--permission-prompts" in command
+    assert seen["input"] == "user"
 
 
 def test_agent_runs_only_after_model_plan_and_records_the_plan(tmp_path) -> None:

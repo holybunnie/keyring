@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_CREDENTIAL_PATH = Path.home() / ".claude" / ".credentials.json"
+DEFAULT_CODEX_CREDENTIAL_PATH = Path.home() / ".codex" / ".credentials.json"
 DEFAULT_ENDPOINT = "https://agent.binance.com/mcp/agentic"
 
 
@@ -115,6 +116,65 @@ def from_client_credentials(
         expires_at=expires_at,
         client_id=entry.get("clientId"),
         server_name=entry.get("serverName"),
+    )
+
+
+def from_codex_credentials(
+    path: str | Path = DEFAULT_CODEX_CREDENTIAL_PATH,
+    server_prefix: str = "binance|",
+) -> Session:
+    """Load the exact Binance OAuth entry stored by Codex CLI.
+
+    Codex keeps MCP OAuth entries at the top level and uses snake-case field
+    names, unlike Claude Code's ``mcpOAuth`` store.  A separate loader keeps
+    the client/account choice explicit instead of allowing ``load()`` to
+    silently select the wrong account.
+    """
+    path = Path(path)
+    if not path.exists():
+        raise SessionUnavailable(f"no Codex credential store at {path}")
+
+    try:
+        document = json.loads(path.read_text())
+    except json.JSONDecodeError as error:
+        raise SessionUnavailable(f"Codex credential store is not readable JSON: {error}") from error
+
+    entries = [
+        value
+        for key, value in document.items()
+        if key.startswith(server_prefix) and isinstance(value, dict)
+    ]
+    if not entries:
+        raise SessionUnavailable("no authorized Codex session for Binance")
+    if len(entries) > 1:
+        raise SessionUnavailable(
+            f"{len(entries)} Codex sessions match Binance; refusing to guess which grant to measure"
+        )
+
+    entry = entries[0]
+    token = entry.get("access_token")
+    if not token:
+        raise SessionUnavailable("Codex session carries no access token")
+
+    expires_at = None
+    if entry.get("expires_at"):
+        expires_at = datetime.fromtimestamp(entry["expires_at"] / 1000, timezone.utc)
+        if expires_at < datetime.now(timezone.utc):
+            raise SessionUnavailable(f"Codex session expired at {expires_at.isoformat()}")
+
+    scopes = entry.get("scopes") or entry.get("scope")
+    if isinstance(scopes, list):
+        granted_scope = " ".join(str(scope) for scope in scopes)
+    else:
+        granted_scope = str(scopes) if scopes else None
+
+    return Session(
+        endpoint=entry.get("server_url", DEFAULT_ENDPOINT),
+        authorization=f"Bearer {token}",
+        granted_scope=granted_scope,
+        expires_at=expires_at,
+        client_id=entry.get("client_id"),
+        server_name=entry.get("server_name", "binance"),
     )
 
 

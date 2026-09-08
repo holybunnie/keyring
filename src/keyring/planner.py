@@ -4,7 +4,7 @@ The model sees a discovered tool schema, live symbol filters, the capability
 under test, and prior probe history. It can propose arguments and a reason. It
 cannot send them. ``validate_proposal`` is the hard gate: a proposal must use a
 discovered write tool, satisfy the schema's required fields, use the requested
-symbol, and place a positive notional below the live ``MIN_NOTIONAL`` filter.
+symbol, and violate a live rejection filter in a way that cannot execute.
 """
 
 from __future__ import annotations
@@ -75,6 +75,28 @@ def _decimal(value: Any) -> Decimal | None:
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
         return None
+
+
+def _filter_number(filter_value: Mapping[str, Any] | None, *keys: str) -> Decimal | None:
+    if not filter_value:
+        return None
+    for key in keys:
+        if key in filter_value:
+            value = _decimal(filter_value.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+def _normalize_numeric_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep model-proposed decimal values out of scientific JSON notation."""
+    normalized = dict(arguments)
+    for name, value in normalized.items():
+        if isinstance(value, float):
+            decimal = _decimal(value)
+            if decimal is not None:
+                normalized[name] = format(decimal, "f")
+    return normalized
 
 
 def _operation(name: str) -> str:
@@ -172,11 +194,9 @@ def validate_proposal(
         reasons.append("argument symbol does not match the planned symbol")
 
     min_filter = _find_filter(filters, "MIN_NOTIONAL", "NOTIONAL")
-    min_notional = _decimal(
-        min_filter.get("minNotional") if min_filter else None
-    )
-    if min_notional is None or min_notional <= 0:
-        reasons.append("live MIN_NOTIONAL filter is missing or invalid")
+    min_notional = _filter_number(min_filter, "minNotional", "notional")
+    if min_filter and (min_notional is None or min_notional <= 0):
+        reasons.append("live notional filter is present but invalid")
 
     quantity = _decimal(_number_argument(arguments, "quantity", "qty", "origQty"))
     price = _decimal(_number_argument(arguments, "price"))
@@ -191,14 +211,39 @@ def validate_proposal(
 
     expected = proposal.expected_filter.upper()
     available = _filter_names(filters)
-    aliases = {"MIN_NOTIONAL", "NOTIONAL"}
-    # The hard safety invariant is a below-minimum-notional order.  Other
-    # filters may explain the eventual response, but accepting a proposal that
-    # only claims an unverified filter would turn the send gate into guesswork.
-    if expected not in aliases:
-        reasons.append("expected filter must be MIN_NOTIONAL or NOTIONAL")
-    elif not (available & aliases):
-        reasons.append("expected notional filter is not present in live symbol filters")
+    notional_filters = {"MIN_NOTIONAL", "NOTIONAL"}
+    safe_filters = notional_filters | {"PRICE_FILTER", "LOT_SIZE", "MARKET_LOT_SIZE"}
+    # Every accepted proposal must identify a live filter that guarantees
+    # rejection. Notional is the strongest invariant when available; COIN-M
+    # exchange information has no notional filter, so a price/lot lower bound
+    # is used instead.
+    if expected not in safe_filters:
+        reasons.append("expected filter is not a supported live rejection filter")
+    elif expected not in available:
+        reasons.append("expected rejection filter is not present in live symbol filters")
+    elif expected in notional_filters:
+        if min_notional is None or min_notional <= 0:
+            reasons.append("expected notional filter is missing or invalid")
+    elif expected == "PRICE_FILTER":
+        price_filter = _find_filter(filters, "PRICE_FILTER") or {}
+        min_price = _decimal(price_filter.get("minPrice"))
+        max_price = _decimal(price_filter.get("maxPrice"))
+        if price is None or price <= 0:
+            reasons.append("a positive price is required for a price-filter probe")
+        elif (min_price is None or price >= min_price) and (
+            max_price is None or price <= max_price
+        ):
+            reasons.append("price does not violate the live PRICE_FILTER")
+    else:
+        lot_filter = _find_filter(filters, expected) or {}
+        min_qty = _decimal(lot_filter.get("minQty"))
+        max_qty = _decimal(lot_filter.get("maxQty"))
+        if quantity is None or quantity <= 0:
+            reasons.append("a positive quantity is required for a lot-size probe")
+        elif (min_qty is None or quantity >= min_qty) and (
+            max_qty is None or quantity <= max_qty
+        ):
+            reasons.append("quantity does not violate the live lot-size filter")
     if not proposal.symbol.strip():
         reasons.append("planned symbol is empty")
     if not proposal.justification.strip():
@@ -209,7 +254,7 @@ def validate_proposal(
         reasons=tuple(reasons),
         notional=str(notional) if notional is not None else None,
         min_notional=str(min_notional) if min_notional is not None else None,
-        violated_filters=("MIN_NOTIONAL",) if not reasons else (),
+        violated_filters=(expected,) if not reasons else (),
     )
 
 
@@ -229,12 +274,29 @@ def static_proposal(
     if not isinstance(required, list):
         required = []
     min_filter = _find_filter(filters, "MIN_NOTIONAL", "NOTIONAL")
-    min_notional = _decimal(min_filter.get("minNotional") if min_filter else None)
+    min_notional = _filter_number(min_filter, "minNotional", "notional")
     lot_filter = _find_filter(filters, "LOT_SIZE")
     qty = _decimal(lot_filter.get("minQty") if lot_filter else None) or Decimal("0.00001")
-    if min_notional is None:
-        raise ProposalRejected("cannot make a static proposal without MIN_NOTIONAL")
-    price = min_notional / (qty * Decimal(2))
+    expected_filter = "MIN_NOTIONAL"
+    if min_notional is not None and min_notional > 0:
+        price = min_notional / (qty * Decimal(2))
+        justification = (
+            f"positive notional {qty * price} is below the live MIN_NOTIONAL "
+            f"threshold {min_notional} for {symbol}"
+        )
+    else:
+        price_filter = _find_filter(filters, "PRICE_FILTER")
+        min_price = _decimal(price_filter.get("minPrice") if price_filter else None)
+        if min_price is None or min_price <= 0:
+            raise ProposalRejected(
+                "cannot make a static proposal without a valid notional or price filter"
+            )
+        price = min_price / Decimal(2)
+        expected_filter = "PRICE_FILTER"
+        justification = (
+            f"price {price} is below the live PRICE_FILTER minimum {min_price} "
+            f"for {symbol}; the order is rejected before execution"
+        )
     arguments: dict[str, Any] = {}
     for name in required:
         if name == "symbol":
@@ -263,11 +325,8 @@ def static_proposal(
         tool_name=tool_name,
         arguments=arguments,
         symbol=symbol,
-        expected_filter="MIN_NOTIONAL",
-        justification=(
-            f"positive notional {qty * price} is below the live MIN_NOTIONAL "
-            f"threshold {min_notional} for {symbol}"
-        ),
+        expected_filter=expected_filter,
+        justification=justification,
         planned_by="static",
     )
     validation = validate_proposal(proposal, tool_schema, filters, discovered_tool_names=[tool_name])
@@ -299,7 +358,10 @@ def planner_prompt(
                 "arguments": "complete arguments object",
                 "symbol": symbol,
                 "expected_filter": "one filterType present in live_symbol_filters",
-                "justification": "why positive notional is below MIN_NOTIONAL and cannot execute",
+                "justification": (
+                    "why the selected live filter is guaranteed to reject the "
+                    "positive order before execution"
+                ),
             },
         },
         indent=2,
@@ -371,7 +433,11 @@ class ProbePlanner:
                 feedback = [f"model proposal could not be parsed: {error}"]
                 continue
             raw_arguments = payload.get("arguments")
-            arguments = raw_arguments if isinstance(raw_arguments, dict) else {}
+            arguments = (
+                _normalize_numeric_arguments(raw_arguments)
+                if isinstance(raw_arguments, dict)
+                else {}
+            )
             proposal = ProbeProposal(
                 tool_name=str(payload.get("tool_name", "")),
                 arguments=arguments,

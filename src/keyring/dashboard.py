@@ -68,29 +68,44 @@ def _safety(evidence_dir: Path) -> dict[str, Any]:
     except Exception:  # noqa: BLE001 - a missing config must not take the page down
         max_per_run = None
 
-    probes = 0
-    last_429 = None
+    all_records: list[Any] = []
     status = "HEALTHY"
     for file in sorted(evidence_dir.glob("*.jsonl")):
         try:
-            records = EvidenceLog(file).records(verify=True)
-        except Exception:  # noqa: BLE001 - an unverifiable file is reported, not served
+            all_records.extend(EvidenceLog(file).records(verify=True))
+        except Exception:  # noqa: BLE001 - an unverifiable file is reported below
             status = "EVIDENCE UNVERIFIABLE"
+
+    latest_probe = max(
+        (
+            record
+            for record in all_records
+            if record.record_type == "capability_probe"
+        ),
+        key=lambda record: record.occurred_at,
+        default=None,
+    )
+    active_run_id = latest_probe.run_id if latest_probe else None
+
+    probes = 0
+    last_429 = None
+    for record in all_records:
+        if active_run_id and record.run_id != active_run_id:
             continue
-        for record in records:
-            if record.record_type == "capability_probe":
-                probes += 1
-            if record.http_status == 429:
-                last_429 = record.occurred_at.isoformat()
-                status = "BACKED OFF"
-            elif record.http_status == 418:
-                status = "KILLED (418)"
-            elif record.http_status == 403:
-                status = "HALTED (403)"
+        if record.record_type == "capability_probe":
+            probes += 1
+        if record.http_status == 429:
+            last_429 = record.occurred_at.isoformat()
+            status = "BACKED OFF"
+        elif record.http_status == 418:
+            status = "KILLED (418)"
+        elif record.http_status == 403:
+            status = "HALTED (403)"
     return {
         "probe_budget": f"{probes} / {max_per_run if max_per_run is not None else '?'} used",
         "probes_used": probes,
         "max_probes_per_run": max_per_run,
+        "run_id": active_run_id,
         "rate_limit_status": status,
         "last_429": last_429 or "none",
     }
@@ -176,6 +191,8 @@ def dashboard_state(
             "digests_seen": authority["state_digests_seen"],
             "distinct_states": authority["distinct_states"],
             "identical_throughout": authority["state_identical_throughout"],
+            "probe_pairs": authority["probe_pairs"],
+            "probe_pairs_identical": authority["probe_pairs_identical"],
             # derive() can only return after every evidence file has passed its
             # sequence, previous-hash, and record-hash checks.
             "chain_unbroken": True,
@@ -271,9 +288,10 @@ def render_html(state: dict[str, Any]) -> str:
         f"<div class=chip><span>last 429</span> <b>{_esc(safety['last_429'])}</b></div>",
         f"<div class=chip><span>grant</span> <b>{_esc(state['granted_scope'])}</b></div>",
         f"<div class=chip><span>state</span> <b class="
-        f"{'ok' if chain['identical_throughout'] and chain['chain_unbroken'] else 'bad'}>"
+        f"{'ok' if chain['probe_pairs_identical'] and chain['chain_unbroken'] else 'bad'}>"
         f"{state['records_replayed']} records · {chain['digests_seen']} digests · "
-        f"{chain['distinct_states']} distinct state · "
+        f"{chain['distinct_states']} snapshot states · "
+        f"{chain['probe_pairs']} probe pairs identical · "
         f"{'chain unbroken' if chain['chain_unbroken'] else 'chain broken'}</b></div>",
         "</div>",
         "<h2>Effective authority — click a row for its proof chain</h2>",

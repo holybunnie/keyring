@@ -34,6 +34,6 @@ read-only dashboard
 
 **OBSERVED:** The classifier consumes evidence records rather than dashboard input, so every displayed classification has a raw evidence source and proof chain.
 
-**OBSERVED:** The agent boundary is deliberately narrow. Claude sees runtime tool schemas, live filters, capability context, and prior probe history only to propose a non-executing probe. A deterministic validator rejects any proposal that is not tied to a discovered write tool or that is not below the live notional threshold. Claude never receives a Binance client.
+**OBSERVED:** The agent boundary is deliberately narrow. Claude sees runtime tool schemas, live filters, capability context, and prior probe history only to propose a non-executing probe. A deterministic validator rejects any proposal that is not tied to a discovered write tool or that does not violate a live rejection filter. Claude never receives a Binance client.
 
 **OBSERVED:** For an unmatched gateway response, Claude may propose a class and reason. The deterministic classifier remains authoritative; known codes never enter the model path, and disagreements remain in the evidence record.

@@ -35,6 +35,7 @@ POSITIVE_CONTROL_TOOL = "spot.getAccount"
 # rejection, for example -4013 "Price less than min price".
 #
 # Codes this build has OBSERVED, each rejected before the matching engine:
+#   -1100  malformed numeric parameter
 #   -1013  spot filter failure (PERCENT_PRICE_BY_SIDE)
 #   -4013  USDS-M futures, "Price less than min price"
 #   -1111  COIN-M futures, "Precision is over the maximum defined for this asset"
@@ -42,7 +43,7 @@ POSITIVE_CONTROL_TOOL = "spot.getAccount"
 # ASSUMED: that each of these is a parameter rejection rather than an
 # authorization failure. A code this build has not observed is NOT assumed into
 # a class - it stays INCONCLUSIVE.
-PARAMETER_REJECTION_CODES = {"-1013", "-4013", "-1111"}
+PARAMETER_REJECTION_CODES = {"-1100", "-1013", "-4013", "-1111"}
 AUTHORIZATION_FAILURE_CODES = {"-2015"}
 
 
