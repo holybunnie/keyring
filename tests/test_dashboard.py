@@ -50,7 +50,15 @@ def test_dashboard_state_artifact_is_deterministic_and_source_bound(tmp_path, mo
 
     assert first == second
     assert output.read_bytes() == first_bytes
+    assert set(first["source_manifest"]) == {
+        "evidence/records.jsonl",
+        "strategy/strategy.yaml",
+    }
     assert load_dashboard_state(output, evidence, strategy) == measured
+
+    absolute_evidence = evidence.resolve()
+    absolute_strategy = strategy.resolve()
+    assert load_dashboard_state(output, absolute_evidence, absolute_strategy) == measured
 
     (evidence / "records.jsonl").write_text("changed\n", encoding="utf-8")
     with pytest.raises(ValueError, match="retained evidence"):

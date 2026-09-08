@@ -1,21 +1,21 @@
 {
   "format": "keyring-dashboard-state-v1",
   "source_manifest": {
-    "config/strategy.yaml": "b0a7c68489442d109f33decb7547977bd684053005e59681053f77703baa5a8b",
-    "evidence/raw/0001-m0-preflight.jsonl": "0bfe0456d675bfc302fee601df27a381d4eec078cdf93126377fc5352eff92ac",
-    "evidence/raw/0002-m0-oauth-discovery.jsonl": "688f04f46885e17607070eb87ebe09d92384947936c82c971205c5f1bc5d9df0",
-    "evidence/raw/0003-m0-tools-list.jsonl": "e03726e103ae200abb160e536af1db46f7478b0229c8b7e83a6a1950efbbe80c",
-    "evidence/raw/0004-m0-positive-control.jsonl": "518d0cbb122514324d35fb5e63eac6a918d618c16949b3b4e2c1ef794012c1eb",
-    "evidence/raw/0005-m0-run-b.jsonl": "e63c73b3519d76a739c8b1fb654dbbd1ea284914825bb619996063d34a775d30",
-    "evidence/raw/0007-full-proof-probes.jsonl": "c051f57b1db371a1dc7d0484776084f0c8ee0eec7e8339d31f3edc05c9b974f8",
-    "evidence/raw/0008-run-c-coinm.jsonl": "2db52b47be24a852931ae217fcb799d810deb137dad0a191d5403be6fd95c2ae",
-    "evidence/raw/0009-m0-5-permission-mutability.jsonl": "f2bc57e903db7b0580999d5ddfb90e2787e013e30ce9cb8d454d8ab61a78430f",
-    "evidence/raw/0010-client-matrix.jsonl": "757bda024027c3ca7ff530b1b7e9c196408da9141f5b3d0418089c0ea7a40273",
-    "evidence/raw/0011-spot-instrument-inventory.jsonl": "4338ea4c4382b33a8066ab005f20e9a6079200825addc9d09783fa5699e147e4",
-    "evidence/raw/0012-codex-cli-second-account.jsonl": "d2b81310ffe29b0aacef2fc6719057025275dcc83ed49c9835ca3da3d8b97fa0",
-    "evidence/raw/0013-codex-cli-funded-financial-reach.jsonl": "de2364625d6eecb0bcfc60f39b5cb1e2e727710545192ea0d938485ce811e4c7",
-    "evidence/raw/0015-codex-cli-second-account-exit-cost-20260908.jsonl": "13635ccbb4bb4b7b690429a749b0c32426757dc5a8e4b535b069fed3b42ec145",
-    "evidence/raw/0017-codex-cli-second-account-revocation-20260908.jsonl": "ed34ab059f0fe0227141c5748e2924e4a83c8141faa9623bd1ab1d49bebbab8f"
+    "evidence/0001-m0-preflight.jsonl": "0bfe0456d675bfc302fee601df27a381d4eec078cdf93126377fc5352eff92ac",
+    "evidence/0002-m0-oauth-discovery.jsonl": "688f04f46885e17607070eb87ebe09d92384947936c82c971205c5f1bc5d9df0",
+    "evidence/0003-m0-tools-list.jsonl": "e03726e103ae200abb160e536af1db46f7478b0229c8b7e83a6a1950efbbe80c",
+    "evidence/0004-m0-positive-control.jsonl": "518d0cbb122514324d35fb5e63eac6a918d618c16949b3b4e2c1ef794012c1eb",
+    "evidence/0005-m0-run-b.jsonl": "e63c73b3519d76a739c8b1fb654dbbd1ea284914825bb619996063d34a775d30",
+    "evidence/0007-full-proof-probes.jsonl": "c051f57b1db371a1dc7d0484776084f0c8ee0eec7e8339d31f3edc05c9b974f8",
+    "evidence/0008-run-c-coinm.jsonl": "2db52b47be24a852931ae217fcb799d810deb137dad0a191d5403be6fd95c2ae",
+    "evidence/0009-m0-5-permission-mutability.jsonl": "f2bc57e903db7b0580999d5ddfb90e2787e013e30ce9cb8d454d8ab61a78430f",
+    "evidence/0010-client-matrix.jsonl": "757bda024027c3ca7ff530b1b7e9c196408da9141f5b3d0418089c0ea7a40273",
+    "evidence/0011-spot-instrument-inventory.jsonl": "4338ea4c4382b33a8066ab005f20e9a6079200825addc9d09783fa5699e147e4",
+    "evidence/0012-codex-cli-second-account.jsonl": "d2b81310ffe29b0aacef2fc6719057025275dcc83ed49c9835ca3da3d8b97fa0",
+    "evidence/0013-codex-cli-funded-financial-reach.jsonl": "de2364625d6eecb0bcfc60f39b5cb1e2e727710545192ea0d938485ce811e4c7",
+    "evidence/0015-codex-cli-second-account-exit-cost-20260908.jsonl": "13635ccbb4bb4b7b690429a749b0c32426757dc5a8e4b535b069fed3b42ec145",
+    "evidence/0017-codex-cli-second-account-revocation-20260908.jsonl": "ed34ab059f0fe0227141c5748e2924e4a83c8141faa9623bd1ab1d49bebbab8f",
+    "strategy/strategy.yaml": "b0a7c68489442d109f33decb7547977bd684053005e59681053f77703baa5a8b"
   },
   "state": {
     "account_headline": [

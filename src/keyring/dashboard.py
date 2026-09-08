@@ -516,8 +516,13 @@ def _source_manifest(
     evidence_path: str | Path, strategy_path: str | Path
 ) -> dict[str, str]:
     evidence_dir = _evidence_dir(evidence_path)
-    paths = sorted(evidence_dir.glob("*.jsonl")) + [Path(strategy_path)]
-    return {str(path): _sha256_file(path) for path in paths}
+    manifest = {
+        f"evidence/{path.name}": _sha256_file(path)
+        for path in sorted(evidence_dir.glob("*.jsonl"))
+    }
+    strategy = Path(strategy_path)
+    manifest[f"strategy/{strategy.name}"] = _sha256_file(strategy)
+    return manifest
 
 
 def build_dashboard_state(
