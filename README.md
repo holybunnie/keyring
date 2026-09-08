@@ -24,7 +24,47 @@ self-report.** This is an observability gap, not a vulnerability claim.
 | Agent replay | `python -m keyring agent-replay` |
 | Code | [github.com/holybunnie/keyring](https://github.com/holybunnie/keyring) |
 
-## Run the complete agent replay now
+## How to use KEYRING
+
+### Judge or first-time visitor
+
+Open the [live dashboard](https://keyring.13-62-181-128.sslip.io/#overview).
+Nothing needs to be installed. The public dashboard is read-only, contains no
+Binance credentials, and makes no live account or model calls.
+
+### Judge verifying the agent workflow
+
+Run `agent-replay` after cloning the repository. Replay is the submission's
+technical verification experience: it reconstructs one retained audit from its
+original evidence and recomputes the deterministic safety gate. It does not
+perform a new account audit, reconnect an account, or repeat a transaction.
+
+### Another agent or automated reviewer
+
+Consume the same verified results as JSON through ordinary subprocess calls:
+
+```bash
+python -m keyring agent-replay --json
+python -m keyring authority --json
+python -m keyring trace --json
+python -m keyring least-privilege --json
+python -m keyring financial-reach --json
+```
+
+Each command writes structured JSON to standard output. An agent needs shell
+access to the cloned repository; it receives no Binance credential and cannot
+change the retained evidence through these commands.
+
+### Operator measuring a new authorized account
+
+This release does not provide a turnkey `keyring audit` command. Fresh
+measurement requires an authorized operator workflow using the included MCP
+client, runtime discovery, model planner, deterministic gate, controlled probe
+execution, evidence capture, and classifiers. That workflow runs beside the
+operator's authenticated Binance Agent OS session. Do not use `agent-replay` as
+if it were a fresh audit: replay only verifies the retained submission evidence.
+
+## Replay the retained audit
 
 Python 3.11 or newer is required. From a clean virtual environment:
 
