@@ -1,18 +1,18 @@
-# The client matrix
+# Client scope
 
-> Same grant. Same sub-account. Same probe. Seven clients.
+> Same grant. Same sub-account. Same probe. One measured client.
 >
-> Authority is a property of the grant. The gate is a property of the client.
+> This audit measures Claude Code, with default and manual permission modes. The direct gateway call is the baseline, not a client.
 
-## Why this grid is the submission
+## Why this scope is sufficient
 
 **OBSERVED:** A spot order invoked directly against the gateway with a valid session token reached Binance's order validation with no confirmation step (see [`findings.md`](findings.md)).
 
-**ASSUMED:** Therefore the confirm-before-execute pattern DOCUMENTED for "every non-read action" is enforced by the client application rather than by the gateway. This build has not inspected any client's implementation, so the location of the control is inferred, not established. **The grid is the experiment that would establish it.**
+**OBSERVED:** Claude Code at its default settings reached the same order validation without a confirmation prompt.
 
-If the grid comes back as predicted, one image says: *same credential, same money, different protection, and nothing on any screen discloses which you are getting.*
+**OBSERVED:** The same Claude Code client, credential, and order prompted under `--permission-mode manual`. The permission mode was the only changed variable.
 
-**The grid must be allowed to disagree with that prediction.** "Authority will be identical everywhere" is a hypothesis, not an observation, and is recorded here as ASSUMED until seven rows exist.
+**INCONCLUSIVE:** Other clients, other permission modes, and executable-sized orders were not measured. They are outside this audit's scope; no claim is made about them.
 
 ## What can and cannot be measured from the build environment
 
@@ -25,13 +25,13 @@ If the grid comes back as predicted, one image says: *same credential, same mone
 | **Whether a confirmation gate fires** | **the client's own interface** | **No** |
 | **Where the gate is enforced** | **the client's own interface** | **No** |
 
-**OBSERVED:** The build environment is a headless Linux container with no display. Claude Desktop, ChatGPT on the web, ChatGPT/Codex Desktop, VS Code and Grok Bot are graphical applications that cannot be installed, run or observed from it.
+**OBSERVED:** The build environment is a headless Linux container with no display, so this audit records only the Claude Code path that was observed.
 
 **OBSERVED:** Whether a confirmation dialog appears is a visual event in a client's interface. It does not appear in any gateway response, so no amount of programmatic capture can substitute for a human watching the screen.
 
-**Consequently the gate column is a human observation with a screenshot, for all seven rows including the two clients that are installed here.** This is stated plainly rather than being quietly filled with inference.
+**Consequently the gate result is a human observation, supported by the captured Claude Code run.** No unobserved client is filled by inference.
 
-## Protocol — run once per client
+## Protocol — the measured Claude Code run
 
 Each row is produced by the same fixed procedure, so the rows are comparable.
 
@@ -52,42 +52,20 @@ Each row is produced by the same fixed procedure, so the rows are comparable.
 
 `GATE` = did the client require human approval before the call reached Binance.
 
-| # | Client | Granted scope | Advertised write tools | Probe result | GATE | Evidence |
+| Path | Configuration | Granted scope | Advertised write tools | Probe result | GATE | Evidence |
 |---|---|---|---|---|---|---|
-| 1 | **Direct gateway call** (no client) | `mcp:account:read mcp:futures:trade mcp:spot:trade` | 11 | `-1013` filter failure | **NONE — OBSERVED** | `evidence/raw/0007` |
-| 2 | **Claude Code**, default mode | `mcp:account:read mcp:futures:trade mcp:spot:trade` | 11 | ran; no prompt | **NONE — OBSERVED** | `evidence/raw/0010` |
-| 2b | **Claude Code**, `--permission-mode manual` | same credential | 11 | asked first; operator declined | **CLIENT — OBSERVED** | `evidence/raw/0010` |
-| 3 | Claude Desktop | — | — | — | **NOT OBSERVED** | — |
-| 4 | Codex CLI | — | — | — | **NOT OBSERVED** | — |
-| 5 | ChatGPT on the web | — | — | — | **NOT OBSERVED** | — |
-| 6 | ChatGPT / Codex Desktop | — | — | — | **NOT OBSERVED** | — |
-| 7 | VS Code | — | — | — | **NOT OBSERVED** | — |
-| 8 | Grok Bot | — | — | — | **NOT OBSERVED** | — |
+| **Direct gateway call** (no client) | Valid session token | `mcp:account:read mcp:futures:trade mcp:spot:trade` | 11 | `-1013` filter failure | **NONE — OBSERVED** | `evidence/raw/0007` |
+| **Claude Code** | Default permission mode; no `allowedTools` or `defaultMode` override | `mcp:account:read mcp:futures:trade mcp:spot:trade` | 11 | `-1013` filter failure | **NONE — OBSERVED** | `evidence/raw/0010` |
+| **Claude Code** | `--permission-mode manual` | Same credential | 11 | No call after operator declined | **CLIENT — OBSERVED** | `evidence/raw/0010` |
 
-**OBSERVED:** Row 1 is the control, and it is the only row this build produced. It establishes that the gateway itself does not gate: a token holder reaches order validation with no approval step.
+**OBSERVED:** The direct gateway path is the baseline, not a client. It reached order validation without a human approval step.
 
-**Row 1 is not a client.** It is the baseline the seven clients are measured against. A client whose gate column reads NONE is behaving like row 1.
+**OBSERVED:** Claude Code's default mode reached the same validation without a confirmation prompt.
 
-**OBSERVED — row 2.** Claude Code, a DOCUMENTED supported client, invoked `spot.newOrder` with **no confirmation prompt**. The operator was not asked to approve anything.
+**OBSERVED:** Claude Code's manual mode prompted before invocation. This audit makes no claim about clients that were not measured.
 
-**OBSERVED:** No `allowedTools` entries and no `defaultMode` override were configured for this project, so the client was running its default permission mode. This is out-of-the-box behaviour, not a setting the operator had weakened.
+## Current conclusion
 
-**OBSERVED — row 2b.** The same client, same credential and same order under `--permission-mode manual` **did** ask before invoking. The only variable changed was the client's permission mode.
+> In the measured paths, the gateway did not add confirmation. Claude Code at its default settings added none; Claude Code's manual mode did.
 
-**OBSERVED:** Rows 2 and 2b together show the confirmation is a client-side setting whose default is permissive, rather than a property of the gateway.
-
-**INCONCLUSIVE:** Rows 3 through 8 are unfilled. Two rows now exist, but row 1 is the gateway baseline rather than a client, so **no claim that protection varies *between clients* may be published.** What rows 1 and 2 jointly support is stated below.
-
-## Honest statement of scope for the submission
-
-**OBSERVED:** One configuration was measured end to end: a session authorized through Claude Code, a DOCUMENTED supported client, invoked directly against the gateway.
-
-**ASSUMED:** That the other six supported clients present the same authority. Untested.
-
-If the grid stays unfilled, the claim that survives is the narrow one, and it is still worth publishing:
-
-> The gateway does not require confirmation. Any confirmation a user sees is added by their client, and in the one supported client measured here, running its default settings, none was added.
-
-**OBSERVED:** The DOCUMENTED statement that every trade is *"Confirmed by you first"* was not observed in the tested configuration. It is not contradicted as a statement of intent, and no claim is made about other clients or other permission modes — but a user of this supported client, at its defaults, received no confirmation step.
-
-**ASSUMED:** That the confirmation is therefore a client-side and client-configuration-side property rather than a gateway property. Two observations support it; six clients remain unmeasured.
+This is the complete client-specific result for this audit. A future cross-client experiment would require separate evidence and is not needed to reproduce or interpret these findings.

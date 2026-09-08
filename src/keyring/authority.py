@@ -58,6 +58,7 @@ class CapabilityRow:
     scope_granted: str | None = None
     probe_tool: str | None = None
     error_code: str | None = None
+    outcome: str | None = None
     control_passed: bool | None = None
     state_unchanged: bool | None = None
     state_before: str | None = None
@@ -86,6 +87,11 @@ class CapabilityRow:
         if not self.state_unchanged:
             self.classification = "INCONCLUSIVE"
             self.notes.append("state proof failed; discarded under Law 3")
+            return
+
+        if (self.outcome or "").lower() == "advertised_only":
+            self.classification = "ADVERTISED_ONLY"
+            self.notes.append("surface advertised the capability but the grant could not invoke it")
             return
 
         self.classification = classify_error_code(self.error_code)
@@ -143,6 +149,7 @@ def derive(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
         # field: the extractor has been corrected since some records were
         # written, and the raw response is the evidence.
         row.error_code = _binance_error_code(record.raw_response or "") or record.error_code
+        row.outcome = record.outcome
         row.control_passed = record.control_passed
         row.state_unchanged = record.state_unchanged
         row.state_before = record.state_before.digest if record.state_before else None

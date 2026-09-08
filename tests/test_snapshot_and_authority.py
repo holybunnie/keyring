@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from keyring.authority import is_write_tool_name
+from keyring.authority import derive, is_write_tool_name
+from keyring.evidence import EvidenceLog
+from keyring.models import EvidenceRecord
 from keyring.mcp import Budget, RateLimitKill, WriteToolRefused, _binance_error_code, is_write_tool
 from keyring.models import StateSnapshot
 from keyring.prober import classify_error_code
@@ -73,6 +77,43 @@ def test_write_tools_are_refused_by_the_read_path():
     assert is_write_tool("spot.newOrder") is True
     assert is_write_tool("futures_usds.cancelOrder") is True
     assert is_write_tool("spot.getAccount") is False
+
+
+def test_authority_replay_preserves_explicit_advertised_only_outcome(tmp_path):
+    log = EvidenceLog(tmp_path / "evidence.jsonl")
+    log.extend(
+        [
+            EvidenceRecord(
+                record_type="mcp_discovery",
+                run_id="run-1",
+                label="OBSERVED",
+                operation="tools/list",
+                granted_scope="mcp:account:read",
+                raw_response=json.dumps(
+                    {"result": {"tools": [{"name": "spot.newOrder"}]}}
+                ),
+            ),
+            EvidenceRecord(
+                record_type="positive_control",
+                run_id="run-1",
+                label="OBSERVED",
+                control_passed=True,
+            ),
+            EvidenceRecord(
+                record_type="capability_probe",
+                run_id="run-1",
+                label="OBSERVED",
+                capability="spot",
+                operation="spot.newOrder",
+                outcome="advertised_only",
+                control_passed=True,
+                state_unchanged=True,
+            ),
+        ]
+    )
+
+    row = derive(tmp_path)["capabilities"]["spot"]
+    assert row["classification"] == "ADVERTISED_ONLY"
 
 
 @pytest.mark.parametrize(

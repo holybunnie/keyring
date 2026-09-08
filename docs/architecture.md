@@ -5,7 +5,7 @@
 ```text
 checksummed config
       ↓
-discovery-only session transport
+discovery capture + safety-wrapped session transport
       ↓
 positive control
       ↓
@@ -22,8 +22,8 @@ reach, strategy diff, capital layers, revocation summary
 read-only dashboard
 ```
 
-**ASSUMED:** The exact Agentic tool names and the gateway's response envelope remain unresolved until an authenticated `tools/list` capture exists. The repository therefore does not pretend to have a live prober adapter.
+**OBSERVED:** The authenticated Agentic tool surface and JSON-RPC response envelope are captured in [`evidence/raw/0003-m0-tools-list.jsonl`](../evidence/raw/0003-m0-tools-list.jsonl). The measured probe path is implemented by `McpClient`: read-shaped calls use `call_tool`, write-shaped calls are refused there, and an explicit budgeted `probe()` call is required for a probe.
 
-**OBSERVED:** `capture-tools` stops after discovery. The generic transport rejects `tools/call`; a future adapter must be added only after the captured surface and M0 execution path are understood.
+**OBSERVED:** `capture-tools` remains discovery-only and never invokes a tool. The live probe path is separate, records the raw `tools/call` response, and is constrained by the positive control, complete state snapshots, probe budget, and rate-limit halts.
 
 **OBSERVED:** The classifier consumes evidence records rather than dashboard input. A missing control, missing state proof, ambiguous response, rate-limit halt, or server error remains `INCONCLUSIVE`.

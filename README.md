@@ -25,7 +25,7 @@ Every claim below is labelled **OBSERVED** (this build ran it and recorded the r
 
 ## Results
 
-### The confirmation is the client's, not Binance's
+### The confirmation in the measured Claude Code path
 
 **OBSERVED:** A spot order reached Binance's order-filter validation and returned `-1013 Filter failure: PERCENT_PRICE_BY_SIDE`, with no confirmation requested, by two independent paths:
 
@@ -40,9 +40,9 @@ Every claim below is labelled **OBSERVED** (this build ran it and recorded the r
 
 **This is not a vulnerability and is not reported as one.** The token is the credential; a holder of a valid OAuth token can call the API, which is how OAuth works. The finding is narrower and needs no weakness:
 
-> The confirmation is a property of the client, not of Binance. Authority does not change when you switch clients. Protection does — and in the one supported client measured here, at its defaults, there was none. No screen in the authorization flow tells a user this.
+> In the measured paths, the gateway did not add confirmation. Claude Code at its default settings added none; Claude Code's manual mode did. This audit does not generalize to other clients or executable-sized orders.
 
-**ASSUMED:** That this generalises to other clients or other permission modes. Six supported clients remain unmeasured; the grid that would settle it is specified in [`docs/client-matrix.md`](docs/client-matrix.md).
+**INCONCLUSIVE:** Other clients and executable-sized orders were not measured. They are outside this audit's scope; no claim is made about them.
 
 ### Enforcement behaved as documented across the tested surface
 
@@ -226,13 +226,13 @@ Raw responses are in [`evidence/raw/`](evidence/raw/), verbatim and hash-chained
 
 ## Limits
 
-**INCONCLUSIVE:** Six of seven supported clients are unmeasured. No claim that protection varies *between clients* is published.
+**INCONCLUSIVE:** Other supported clients were not measured. Cross-client behaviour is outside this audit's scope; no claim is made about it.
 
 **INCONCLUSIVE:** No `ADVERTISED_ONLY` case, and no `-2015` response, so the DOCUMENTED ambiguity of that code remains untested here.
 
 **INCONCLUSIVE:** Run C found no eligibility-level denial. This account is eligible for every product its grant covers, so the granted-versus-effective gap does not appear at the eligibility layer in this configuration. An account without futures enabled would be needed.
 
-**INCONCLUSIVE:** Whether a different client permission mode, or a larger or fillable order, would produce a confirmation prompt. Untested.
+**INCONCLUSIVE:** Whether a larger or fillable order would produce a confirmation prompt under Claude Code's default mode. Such an order was deliberately not attempted.
 
 **ASSUMED:** That `wallet.getApiKeyPermission` not reflecting OAuth scope is a legacy-endpoint artefact.
 

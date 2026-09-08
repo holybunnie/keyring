@@ -34,6 +34,8 @@ This script is a narration template. Every live value must be replaced from the 
 
 ## 2:30 — revocation and limits
 
-**OBSERVED only after a live run:** “The known-permitted read stopped at [timestamp]. Convergence was [value], `n=[sample size]`.”
+**INCONCLUSIVE in this build:** “No permitted-to-denied revocation trial is present (`n=0`). KEYRING summarizes manually recorded checks but never triggers revocation.”
+
+**OBSERVED only after an authorized live run:** “The known-permitted read stopped at [timestamp]. Convergence was [value], `n=[sample size]`.”
 
 **INCONCLUSIVE:** “Here is what the run could not distinguish. Those rows remain inconclusive rather than becoming a guess.”

@@ -20,9 +20,9 @@ Two independent observations:
 
 **OBSERVED:** The third row differs from the second in exactly one variable: the client's permission mode. Same client, same credential, same order.
 
-**OBSERVED:** The confirmation Binance documents is therefore not a property of the system. It is a client-side setting, and the client's default is the permissive one.
+**OBSERVED:** In the tested Claude Code path, the confirmation Binance documents was not added by the gateway. Claude Code's default mode was permissive; its manual mode prompted.
 
-**OBSERVED:** `spot.newOrder` reached Binance's order-filter validation and returned `-1013 Filter failure: PERCENT_PRICE_BY_SIDE`. The operator was never asked to approve anything, in either path.
+**OBSERVED:** `spot.newOrder` reached Binance's order-filter validation and returned `-1013 Filter failure: PERCENT_PRICE_BY_SIDE`. The operator was never asked to approve anything in the direct gateway or Claude Code default paths.
 
 **OBSERVED:** No `allowedTools` entries and no `defaultMode` override were configured, so the client ran its default permission mode. This is out-of-the-box behaviour, not a setting that had been weakened.
 
@@ -34,9 +34,9 @@ Two independent observations:
 
 The finding is narrower, and does not depend on any weakness:
 
-> The confirmation is a property of the client, not of Binance. Authority does not change when you switch clients. Protection does — and in the one supported client measured here, at its defaults, there was none.
+> In the measured paths, the gateway did not add confirmation. Claude Code at its default settings added none; Claude Code's manual mode did. This audit does not generalize to other clients or executable-sized orders.
 
-**ASSUMED:** That the confirmation is therefore a client-side and client-configuration-side property. Two observations support it. Six supported clients remain unmeasured, and the grid that would establish it is specified in [`client-matrix.md`](client-matrix.md).
+**INCONCLUSIVE:** Other clients and executable-sized orders were not measured. They are outside this audit's scope; no claim is made about them.
 
 **OBSERVED:** The permission-mode confound is closed. Under `--permission-mode manual` the same client asked before invoking; under its default it did not. The absence of a prompt was a function of the client's default configuration, not of the order being small.
 
@@ -51,7 +51,7 @@ The finding is narrower, and does not depend on any weakness:
 **OBSERVED:** Each snapshot is canonicalised and hashed with SHA-256, and the digests are chained across the session.
 
 ```
-records replayed        105
+records replayed        109
 state digests seen        6
 distinct states           1
 identical throughout   True
@@ -211,9 +211,9 @@ python -m keyring financial-reach
 
 ## Limits
 
-**INCONCLUSIVE:** M0.5, whether permissions can be narrowed in place, is not resolved. It requires an action in the Binance web UI that this build cannot perform.
+**OBSERVED:** M0.5 resolved as `RECONNECT_REQUIRED`. The View permissions screen had no edit control; narrowing requires disconnecting and re-authorizing.
 
-**INCONCLUSIVE:** The client matrix is incomplete. See [`client-matrix.md`](client-matrix.md).
+**INCONCLUSIVE:** Other clients were not measured. Cross-client behaviour is outside this audit's scope; no claim is made about it. See [`client-matrix.md`](client-matrix.md).
 
 **INCONCLUSIVE:** No `ADVERTISED_ONLY` case, no `-2015` response, and no autonomous-execution observation beyond the single ungated invocation described above.
 
@@ -226,7 +226,7 @@ Part 0.4 records four questions on which first-party Binance sources describe th
 | Question | Source A | Source B | Measured |
 |---|---|---|---|
 | Can permissions be narrowed in place? | MCP docs: disconnect and reconnect to update | Launch blog: permissions reviewable **or changeable** under Account Management | **`RECONNECT_REQUIRED`** — OBSERVED. The View permissions screen lists permissions and offers no control to change them. Source A is supported. Corroborated independently: this build's grant changed only across a full logout and re-authorization, never within a session. |
-| Is confirmation always required? | MCP docs: applies to **every** non-read action | Support FAQ: flows are *designed to* request confirmation before consequential actions | **The gate is not at the gateway** — OBSERVED. Three probes reached parameter validation with no confirmation step. ASSUMED, not established: that the gate therefore sits in the client. See [`client-matrix.md`](client-matrix.md) for the experiment that would establish it. |
+| Is confirmation always required? | MCP docs: applies to **every** non-read action | Support FAQ: flows are *designed to* request confirmation before consequential actions | **The gateway did not gate the measured paths** — OBSERVED. Direct invocation and Claude Code's default mode reached parameter validation without a prompt; Claude Code's manual mode prompted. Other clients are outside this audit's scope. |
 | Does autonomous execution exist? | Academy: users may require per-order approval **or allow autonomous trading** | MCP docs: no autonomous mode mentioned | **An invocation reached Binance without a human click** — OBSERVED. Whether any client exposes this as a configurable "autonomous mode" is **INCONCLUSIVE**; no such setting was observed and none was looked for programmatically. |
 | What does Emergency Stop do? | MCP docs: cancels all spot, margin and futures **positions and orders** | Support FAQ: behaviour can vary by product | **Not measured, by design.** Triggering it is out of scope (Part 0.4). The disagreement is published, not resolved. |
 
