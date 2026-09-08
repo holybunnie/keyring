@@ -8,6 +8,7 @@ from typing import Any
 import httpx
 
 from .evidence import EvidenceLog
+from .labels import EvidenceLabel
 from .models import EvidenceRecord
 
 
@@ -42,7 +43,7 @@ class JsonRpcClient:
         *,
         timeout_seconds: float = 20,
         transport: httpx.BaseTransport | None = None,
-    ):
+    ) -> None:
         self._session = session
         self._client = httpx.Client(
             timeout=timeout_seconds,
@@ -84,7 +85,7 @@ def capture_tools_list(
                 EvidenceRecord(
                     record_type="tools_list",
                     run_id=run_id,
-                    label="OBSERVED",
+                    label=EvidenceLabel.OBSERVED,
                     operation="tools/list",
                     outcome="transport_error",
                     metadata={"response_received": False},
@@ -98,7 +99,7 @@ def capture_tools_list(
             EvidenceRecord(
                 record_type="tools_list",
                 run_id=run_id,
-                label="OBSERVED",
+                label=EvidenceLabel.OBSERVED,
                 operation="tools/list",
                 response=parsed,
                 raw_response=response.text,

@@ -173,10 +173,10 @@ def _measured_contradictions(records: list[tuple[str, Any]]) -> list[dict[str, A
         if key == "m0-5-permission-mutability":
             if key not in outcomes:
                 continue
-            result = outcomes[key]
-            measured = result["measured"]
-            label = result["label"]
-            evidence = result["evidence"]
+            outcome = outcomes[key]
+            measured = outcome["measured"]
+            label = outcome["label"]
+            evidence = outcome["evidence"]
         elif key == "client_gate_observation":
             if not gate_observations:
                 continue
@@ -339,16 +339,18 @@ def _account_headline_facts(
             if confirmed.get(name)
         ]
         test_text = " · ".join(
-            f"{CAPABILITY_LABELS[name].replace(' trading', '').replace(' Futures', '')} ✓"
+            f"{CAPABILITY_LABELS[name].replace(' trading', '').replace(' Futures', '')}: "
+            "validation reached ✓"
             for name, _ in tested
-        ) or "No confirmed trading path"
+        ) or "No trading path reached validation"
         test_refs = [ref for _, refs in tested for ref in refs]
 
         rows.append(
             {
                 "account": account,
-                "permission_screen": {
+                "granted_mcp_scopes": {
                     "value": " · ".join(consent) or "Not recorded",
+                    "technical": selected_scope,
                     "sources": selected_refs[:1],
                 },
                 "permission_check": {
@@ -618,7 +620,7 @@ def _account_headline_html(rows: list[dict[str, Any]]) -> str:
         cards.append(
             '<article class="account-panel">'
             f'<h3>{_esc(row["account"])}</h3>'
-            + cell("Permission screen", row["permission_screen"])
+            + cell("Granted MCP scopes", row["granted_mcp_scopes"])
             + cell("Binance's own permission check", row["permission_check"])
             + cell("Tools handed to the agent", row["tools"])
             + cell("Controlled tests", row["controlled_tests"])
@@ -846,7 +848,7 @@ def render_html(state: dict[str, Any]) -> str:
             '<header class="hero" id="overview"><div class="eyebrow">Measured connection report</div>',
             '<h1>What can this agent actually do?</h1>',
             '<p class="lead">We checked four ways. The answers didn\'t match.</p>',
-            '<section class="hero-panel" aria-labelledby="headline-panel-title"><h2 id="headline-panel-title">What can this agent actually do?</h2><p class="hero-panel-intro">The permission screen, Binance’s own permission check, the tools handed to the agent, and controlled tests each answer a different part of the same question.</p>',
+            '<section class="hero-panel" aria-labelledby="headline-panel-title"><h2 id="headline-panel-title">What can this agent actually do?</h2><p class="hero-panel-intro">The granted MCP scopes, Binance’s own permission check, the tools handed to the agent, and controlled tests each answer a different part of the same question.</p>',
             f'{_account_headline_html(account_headline)}',
             f'<p class="hero-panel-foot"><strong>Same permission set. Same measured trading surface. Different self-report.</strong><br>{_esc(_account_headline_summary(account_headline))}<br>Every figure on this page is regenerated from the evidence log. Nothing is typed in.</p></section>',
             '<div class="hero-grid"><div class="answer"><div class="answer-label">The answer from this run</div>',
@@ -938,7 +940,19 @@ def create_server(
     host: str = "127.0.0.1",
     port: int = 8080,
     strategy_path: str | Path = "config/strategy.yaml",
+    state_file: str | Path | None = None,
 ) -> ThreadingHTTPServer:
+    static_state: dict[str, Any] | None = None
+    if state_file is not None:
+        state_path = Path(state_file)
+        try:
+            loaded = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise ValueError(f"dashboard state file is not valid JSON: {state_path}") from error
+        if not isinstance(loaded, dict):
+            raise ValueError("dashboard state file must contain a JSON object")
+        static_state = loaded
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
@@ -951,7 +965,11 @@ def create_server(
             self.wfile.write(body)
 
         def do_GET(self) -> None:  # noqa: N802
-            state = dashboard_state(evidence_path, strategy_path)
+            state = (
+                static_state
+                if static_state is not None
+                else dashboard_state(evidence_path, strategy_path)
+            )
             if self.path.startswith("/api/state"):
                 self._send(
                     json.dumps(state, indent=2, default=str).encode(), "application/json"
@@ -978,8 +996,15 @@ def serve(
     host: str = "127.0.0.1",
     port: int = 8080,
     strategy_path: str | Path = "config/strategy.yaml",
+    state_file: str | Path | None = None,
 ) -> None:
-    server = create_server(evidence_path, host=host, port=port, strategy_path=strategy_path)
+    server = create_server(
+        evidence_path,
+        host=host,
+        port=port,
+        strategy_path=strategy_path,
+        state_file=state_file,
+    )
     print(f"KEYRING dashboard listening on {host}:{port}")
     try:
         server.serve_forever()
@@ -993,8 +1018,18 @@ def main() -> None:
     parser.add_argument("--strategy", default="config/strategy.yaml")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument(
+        "--state-file",
+        help="serve a previously verified dashboard state snapshot without rereading evidence",
+    )
     args = parser.parse_args()
-    serve(args.evidence, host=args.host, port=args.port, strategy_path=args.strategy)
+    serve(
+        args.evidence,
+        host=args.host,
+        port=args.port,
+        strategy_path=args.strategy,
+        state_file=args.state_file,
+    )
 
 
 if __name__ == "__main__":

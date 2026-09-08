@@ -1,12 +1,9 @@
 """The deliberately narrow KEYRING agent boundary.
 
-The agent has two entry points and no third one:
-
-* :meth:`KeyringAgent.plan_probe` asks Claude for a proposal against runtime
-  tool/filter data, then requires the deterministic planner gate to accept it.
-* :class:`~keyring.interpreter.ResponseInterpreter` may ask Claude to explain
-  an otherwise-unmatched response; the deterministic classifier still owns the
-  published class.
+The agent can plan a probe or coordinate that plan through the existing safe
+probe runner. A :class:`~keyring.interpreter.ResponseInterpreter` may also ask
+Claude to explain an otherwise-unmatched response; the deterministic validator
+and classifier still own what is sent and what is published.
 
 The model adapter has no Binance client and this module never gives it one.
 """
@@ -14,7 +11,7 @@ The model adapter has no Binance client and this module never gives it one.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from typing import TYPE_CHECKING, Any, Iterable, Mapping
 
 from .interpreter import ResponseInterpreter
 from .model_client import TextModel
@@ -25,6 +22,12 @@ from .planner import (
     ProposalValidation,
     validate_proposal,
 )
+
+if TYPE_CHECKING:
+    from .evidence import EvidenceLog
+    from .mcp import McpClient
+    from .prober import ProbeOutcome
+    from .snapshot import SnapshotChain, SnapshotComponent
 
 
 @dataclass(frozen=True)
@@ -50,7 +53,9 @@ class PlannedProbe:
 class KeyringAgent:
     """Coordinate model proposals without granting the model tool access."""
 
-    def __init__(self, model: TextModel | None = None, *, max_attempts: int = 2):
+    def __init__(
+        self, model: TextModel | None = None, *, max_attempts: int = 2
+    ) -> None:
         self.planner = ProbePlanner(model, max_attempts=max_attempts)
         self.interpreter = ResponseInterpreter(model)
 
@@ -89,15 +94,18 @@ class KeyringAgent:
             discovered_tool_names=discovered_names,
         )
         if not validation.valid:
-            raise ProposalRejected("boundary validation rejected proposal: " + "; ".join(validation.reasons))
+            raise ProposalRejected(
+                "boundary validation rejected proposal: "
+                + "; ".join(validation.reasons)
+            )
         return PlannedProbe(proposal=proposal, validation=validation)
 
     def run_probe(
         self,
-        client: Any,
-        log: Any,
-        chain: Any,
-        components: list[Any],
+        client: McpClient,
+        log: EvidenceLog,
+        chain: SnapshotChain,
+        components: list[SnapshotComponent],
         *,
         capability: str,
         tool_schema: Mapping[str, Any],
@@ -108,7 +116,7 @@ class KeyringAgent:
         history: Iterable[Mapping[str, Any]] = (),
         run_id: str | None = None,
         config_sha256: str | None = None,
-    ) -> Any:
+    ) -> ProbeOutcome:
         """Plan, validate, and then enter the existing safety-wrapped probe.
 
         The planner completes before the first state-changing-shaped request is

@@ -2,6 +2,8 @@ import json
 import threading
 from http.client import HTTPConnection
 
+import pytest
+
 from keyring.dashboard import create_server
 
 
@@ -27,5 +29,14 @@ def test_dashboard_exposes_read_only_state(tmp_path) -> None:
         connection.close()
     finally:
         server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+    thread.join(timeout=2)
+    server.server_close()
+
+
+def test_dashboard_rejects_invalid_static_state_before_starting(tmp_path) -> None:
+    source = tmp_path / "evidence.jsonl"
+    source.write_text("\n")
+    state = tmp_path / "state.json"
+    state.write_text(json.dumps(["not", "an", "object"]))
+    with pytest.raises(ValueError, match="JSON object"):
+        create_server(source, host="127.0.0.1", port=0, state_file=state)

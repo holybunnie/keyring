@@ -1,21 +1,119 @@
 # KEYRING
 
-> Binance shows you what you authorized. KEYRING measures what that authorization can actually do.
+> An AI permission auditor for Binance Agent OS: do not infer what a connected
+> agent can do—measure it safely and preserve the proof.
 
 > No exploits. Explicitly approved measurement. No guessing. Just measured authority.
 
 > Two Binance accounts. Two AI clients. Four places that answer “what can this agent do?” — and they disagreed. Every number below regenerates from saved responses.
 
+## The 20-second version
+
+KEYRING connects to the [Binance Agent OS](https://www.binance.com/en/agent-os)
+MCP tool surface and answers a deceptively hard question: **what can this AI
+agent actually do with this account?** It compares the granted MCP scopes,
+Binance's own permission check, the tools given to the agent, and controlled
+tests. It then turns the result into a readable report with a source record
+behind every conclusion.
+
+| What matters | KEYRING's answer |
+|---|---|
+| **Why an AI agent?** | Binance discovers schemas and exchange filters at runtime. The model proposes a trading-shaped test and explains why it should stop before execution. |
+| **What keeps it safe?** | Deterministic code—not the model—checks the live rejection boundary, budget, connection, and before/after financial state. |
+| **What did it find?** | The same permission set exposed the same measured trading surface on two accounts, while Binance's own permission check reported different answers. |
+| **What does the user get?** | An authority map, permission trace, excess-permission report, capital-at-reach view, revocation result, and interactive evidence dashboard. |
+
+## How people use KEYRING
+
+**KEYRING is a local Python CLI and importable Python package. It is not an MCP
+server or an agent skill.** It runs on the reviewer’s or operator’s machine so
+the evidence and any authorized session remain local.
+
+For this submission, the complete judge-facing experience is read-only:
+
+```bash
+pip install -e .
+keyring agent-replay
+keyring dashboard
+```
+
+`agent-replay` verifies the retained evidence chain and reconstructs the
+recorded AI-agent experiment with a source reference at every stage. `dashboard`
+rebuilds the broader account comparison from the same evidence. Neither command
+contacts Binance, reconnects an account, calls a model, or changes evidence.
+Developers can also import the package’s planner, deterministic gate, evidence,
+classifier, and safety components when adapting the measurement harness for an
+approved audit of their own Agent OS connection. A turnkey third-party account
+audit service is not claimed by this repository.
+
+This is a Track A / Track 1 build for the
+[Binance Agent OS Mini Hackathon](https://www.binance.com/en/square/post/362885563835358):
+it is a self-built AI agent using the Binance MCP server, which Binance lists as
+an Agent OS building block for trading and live market data.
+
+## Replay the product in 60 seconds
+
+No Binance login, API key, model key, reconnect, or live trade is needed to
+inspect the retained run.
+
+```bash
+pip install -e .
+python -m keyring dashboard
+```
+
+Open `http://127.0.0.1:8080`. Start with the headline comparison, then click any
+result to open the evidence record and its proof chain. For a terminal view:
+
+```bash
+python -m keyring authority
+python -m keyring trace
+```
+
+The three-minute walkthrough is scripted in
+[`docs/demo-script.md`](docs/demo-script.md). The architecture and trust
+boundary are documented in [`docs/architecture.md`](docs/architecture.md).
+
+## How the agent works
+
+```text
+Binance MCP schema + live filters
+              ↓
+      model proposes a test
+              ↓
+ deterministic non-execution gate
+              ↓
+ connection check → request → before/after state proof
+              ↓
+ deterministic result → trace → dashboard
+```
+
+The model handles the part that changes at runtime: understanding an unfamiliar
+tool schema and proposing arguments against the live exchange rules. It cannot
+send a Binance request or publish a result. That separation is the product's
+central safety design.
+
+The complete recorded loop is directly replayable as an agent transcript:
+
+```bash
+python -m keyring agent-replay
+```
+
+This command verifies and reads retained evidence only. It shows the captured
+runtime schema and live filters, recorded model reasoning, recomputed
+deterministic gate, controlled request and response, model interpretation,
+deterministic result, and before/after state proof. It makes no network or model
+call and writes nothing.
+
 ## What can this agent actually do?
 
-**OBSERVED · harness:** The permission screen, Binance's own permission check,
+**OBSERVED · harness:** The granted MCP scopes, Binance's own permission check,
 the tools handed to the agent, and controlled tests answered different parts of
 the same question. The comparison below is rebuilt from the evidence log.
 
-| Account | Permission screen | Binance's own permission check | Tools handed to the agent | Controlled tests |
+| Account | Granted MCP scopes | Binance's own permission check | Tools handed to the agent | Controlled tests |
 |---|---|---|---|---|
-| Account A | Spot & Margin trading · Futures | Spot ✕ · Futures ✕ | 71 tools · 11 trading writes | Spot ✓ · USDⓈ-M ✓ · COIN-M ✓ |
-| Account B | Spot & Margin trading · Futures | Spot ✓ · Futures ✓ | 71 tools · 11 trading writes | Spot ✓ · USDⓈ-M ✓ · COIN-M ✓ |
+| Account A | Spot & Margin trading · Futures | Spot ✕ · Futures ✕ | 71 tools · 11 trading writes | Spot reached validation ✓ · USDⓈ-M reached validation ✓ · COIN-M reached validation ✓ |
+| Account B | Spot & Margin trading · Futures | Spot ✓ · Futures ✓ | 71 tools · 11 trading writes | Spot reached validation ✓ · USDⓈ-M reached validation ✓ · COIN-M reached validation ✓ |
 
 **OBSERVED · harness:** Account A reported Spot and Futures trading disabled.
 Account B reported them enabled. Both trade-grant surfaces exposed the same 71
@@ -39,12 +137,13 @@ to propose a trading-shaped test: the tool, the arguments, the specific filter i
 expects to violate, and a written justification.
 
 **OBSERVED · harness:** The model cannot execute directly. Every proposal must
-pass a deterministic non-execution gate — `planner.validate_proposal` requires
-the notional to fall below the live `MIN_NOTIONAL` and a named live filter to be
-violated — before the harness may send it. Only then does it run, safety-wrapped,
-with a connection check and a full before/after state snapshot. Responses no
-deterministic matcher recognises go back to the model for interpretation, and
-the deterministic classifier owns the published result.
+pass a deterministic non-execution gate: `planner.validate_proposal` requires a
+named live exchange filter to be violated and, whenever Binance exposes a
+notional minimum, requires the proposed notional to remain below it. Only then
+does the harness send the request, safety-wrapped with a connection check and a
+full before/after state snapshot. Responses no deterministic matcher recognises
+go back to the model for interpretation, and the deterministic classifier owns
+the published result.
 
 **OBSERVED · harness:** The gate is the feature. Every probe record carries
 `planned_by` and the model's reasoning. Where the model and classifier
@@ -209,8 +308,9 @@ The result is an evidence-derived authority map, proof trace, least-privilege co
 All analysis is regenerated from the evidence log; nothing is hand-entered.
 
 ```bash
-pip install -e .
+pip install -e ".[dev]"
 python -m keyring authority
+python -m keyring agent-replay
 python -m keyring trace
 python -m keyring least-privilege
 python -m keyring financial-reach
@@ -219,14 +319,11 @@ python -m keyring dashboard
 python -m pytest -q
 ```
 
-The retained evidence includes the recorded end-to-end agent run. It is the
-replayable artifact for the agent flow: runtime schema and live filters → model
-proposal → deterministic gate → safety-wrapped request → deterministic result.
-The commands above regenerate the analysis without reconnecting to Binance.
-
-There is no `agent-probe` command in this submission: invoking it would perform
-a new live measurement. The retained run is the evidence used for the agent
-flow, and the commands above replay its results without a live session.
+`agent-replay` is the coherent replay artifact for the recorded agent flow:
+runtime schema and live filters → model proposal → deterministic gate →
+safety-wrapped request → model interpretation → deterministic result → state
+proof. The commands above regenerate the experience without reconnecting to
+Binance.
 
 For an externally reachable demo, bind the read-only server explicitly:
 
@@ -240,7 +337,7 @@ Raw responses are in [`evidence/raw/`](evidence/raw/), with credential-shaped va
 
 ## Distribution roadmap
 
-**DOCUMENTED:** KEYRING is not published as an MCP server. A hosted MCP server cannot introspect another MCP server's session: they are separate security contexts, and a hosted KEYRING would have no access to the Binance session it audits. The natural distribution model is a local sidecar running on the operator's machine, exposing a tool such as `what_am_i_allowed_to_do()` to a client that already holds the session, with no third party seeing the token. That is roadmap, not built. Today KEYRING is run by an operator against their own account.
+**DOCUMENTED:** KEYRING is not published as an MCP server. A hosted MCP server cannot introspect another MCP server's session: they are separate security contexts, and a hosted KEYRING would have no access to the Binance session it audits. The natural future distribution model for fresh audits is a local sidecar running on the operator's machine, exposing a tool such as `what_am_i_allowed_to_do()` to a client that already holds the session, with no third party seeing the token. That is roadmap, not built. Today KEYRING is an installable local CLI and library; its included judge-facing experience replays the retained measurement.
 
 ## Scope
 

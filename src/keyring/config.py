@@ -3,9 +3,9 @@ from __future__ import annotations
 import hashlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TypeVar
+from typing import Generic, TypeVar
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 from pydantic import BaseModel
 
 from .models import ProbeConfig, StrategyConfig
@@ -15,13 +15,13 @@ ModelT = TypeVar("ModelT", bound=BaseModel)
 
 
 @dataclass(frozen=True)
-class LoadedConfig:
+class LoadedConfig(Generic[ModelT]):
     path: Path
     sha256: str
-    model: BaseModel
+    model: ModelT
 
 
-def _load(path: Path, model_type: type[ModelT]) -> LoadedConfig:
+def _load(path: Path, model_type: type[ModelT]) -> LoadedConfig[ModelT]:
     raw = path.read_bytes()
     checksum = hashlib.sha256(raw).hexdigest()
     document = yaml.safe_load(raw.decode("utf-8"))
@@ -30,11 +30,13 @@ def _load(path: Path, model_type: type[ModelT]) -> LoadedConfig:
     return LoadedConfig(path=path, sha256=checksum, model=model_type.model_validate(document))
 
 
-def load_probe_config(path: str | Path = "config/probes.yaml") -> LoadedConfig:
+def load_probe_config(path: str | Path = "config/probes.yaml") -> LoadedConfig[ProbeConfig]:
     loaded = _load(Path(path), ProbeConfig)
     return loaded
 
 
-def load_strategy_config(path: str | Path = "config/strategy.yaml") -> LoadedConfig:
+def load_strategy_config(
+    path: str | Path = "config/strategy.yaml",
+) -> LoadedConfig[StrategyConfig]:
     loaded = _load(Path(path), StrategyConfig)
     return loaded

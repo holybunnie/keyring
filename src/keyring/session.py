@@ -163,6 +163,7 @@ def from_codex_credentials(
             raise SessionUnavailable(f"Codex session expired at {expires_at.isoformat()}")
 
     scopes = entry.get("scopes") or entry.get("scope")
+    granted_scope: str | None
     if isinstance(scopes, list):
         granted_scope = " ".join(str(scope) for scope in scopes)
     else:

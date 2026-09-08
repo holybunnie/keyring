@@ -471,6 +471,7 @@ def reach(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
     # --- capital visible -----------------------------------------------------
     wallets = components.get("wallet_balances")
     quoted = _latest_quoted_wallet_balances(evidence_dir)
+    per_wallet: dict[str, Decimal]
     if quoted is not None:
         total, per_wallet, quoted_record = quoted
         visible = _layer(
@@ -481,7 +482,7 @@ def reach(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
         )
     elif _unavailable(wallets) or not isinstance(wallets, list):
         visible = _layer(None, "INCONCLUSIVE", "wallet balance component unavailable")
-        per_wallet: dict[str, Decimal] = {}
+        per_wallet = {}
     else:
         per_wallet = {}
         total = Decimal(0)

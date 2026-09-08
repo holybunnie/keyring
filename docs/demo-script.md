@@ -11,10 +11,11 @@ match.”
 
 ## 0:15 — the headline panel
 
-**OBSERVED · harness:** “On Account A, the permission screen said Spot & Margin
-trading and Futures. Binance's own permission check reported Spot and Futures
-trading disabled. The tools handed to the agent included eleven trading writes,
-and controlled tests confirmed Spot, USDⓈ-M Futures, and COIN-M Futures.”
+**OBSERVED · harness:** “On Account A, the granted MCP scopes included Spot &
+Margin trading and Futures. Binance's own permission check reported Spot and
+Futures trading disabled. The tools handed to the agent included eleven trading
+writes, and controlled tests reached Binance validation for Spot, USDⓈ-M
+Futures, and COIN-M Futures.”
 
 **OBSERVED · harness:** “Account B had the same 71-tool, eleven-write measured
 surface and the same three confirmed trading families. Binance's own permission
@@ -38,9 +39,10 @@ measured.”
 
 ## 1:40 — the agent, from the recorded run
 
-**OBSERVED · harness:** Show the retained trace: runtime schema and live filters
-→ model proposal with justification → deterministic non-execution gate →
-safety-wrapped request → Binance response → unchanged state.
+Run `python -m keyring agent-replay`. Show the retained trace: runtime schema
+and live filters → model proposal with justification → deterministic
+non-execution gate → safety-wrapped request → Binance response → model
+interpretation → deterministic result → unchanged state.
 
 “The agent designs the test from the runtime schema and live filters. The model
 proposes; deterministic code checks the proposal before the harness sends it,

@@ -97,14 +97,14 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
     discovery_by_product: dict[str, list[str]] = {}
     discovery_refs_by_scope: dict[str, list[tuple[str, int]]] = {}
     for filename, record in discovery_records:
-        scope = _scope_key(record)
-        discovery_refs_by_scope.setdefault(scope, []).append((filename, record.sequence))
+        scope_key = _scope_key(record)
+        discovery_refs_by_scope.setdefault(scope_key, []).append((filename, record.sequence))
         for tool in _tools_list(record):
             name = str(tool.get("name", ""))
             if not is_write_tool_name(name):
                 continue
-            product = name.split(".", 1)[0]
-            discovery_by_product.setdefault(product, []).append(name)
+            product_key = name.split(".", 1)[0]
+            discovery_by_product.setdefault(product_key, []).append(name)
 
     # A scope-bearing discovery or initialize record is the source for the
     # grant line. The latest one is the scope used by the authority replay.
@@ -122,8 +122,8 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
     traces: dict[str, dict[str, Any]] = {}
     for capability, row in authority["capabilities"].items():
         steps: list[dict[str, Any]] = []
-        product = _product_for_capability(capability)
-        scope = row["scope_granted"] or (
+        product: str | None = _product_for_capability(capability)
+        scope: str | None = row["scope_granted"] or (
             latest_scope_record[1].granted_scope if latest_scope_record else None
         )
         scope_sources = discovery_refs_by_scope.get(scope or "", [])

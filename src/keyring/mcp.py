@@ -112,7 +112,7 @@ class McpClient:
         timeout_seconds: float = 30,
         min_interval_seconds: float = 0.2,
         transport: httpx.BaseTransport | None = None,
-    ):
+    ) -> None:
         self.session = session
         self.budget = budget or Budget()
         self._min_interval = min_interval_seconds

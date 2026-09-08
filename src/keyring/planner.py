@@ -118,7 +118,7 @@ def _filter_list(filters: Any) -> list[Mapping[str, Any]]:
     if isinstance(filters, list):
         return [item for item in filters if isinstance(item, Mapping)]
     if isinstance(filters, Mapping):
-        result = []
+        result: list[Mapping[str, Any]] = []
         for name, value in filters.items():
             if isinstance(value, Mapping):
                 result.append({"filterType": name, **value})
@@ -312,6 +312,10 @@ def static_proposal(
         elif name == "price":
             arguments[name] = format(price, "f")
         elif name == "quoteOrderQty":
+            if min_notional is None:
+                raise ProposalRejected(
+                    "static planner cannot fill quoteOrderQty without a live notional filter"
+                )
             arguments[name] = format(min_notional / Decimal(2), "f")
         else:
             raise ProposalRejected(f"static planner cannot fill required argument: {name}")
@@ -372,7 +376,9 @@ def planner_prompt(
 class ProbePlanner:
     """Return only proposals that have passed the deterministic validator."""
 
-    def __init__(self, model: TextModel | None = None, *, max_attempts: int = 2):
+    def __init__(
+        self, model: TextModel | None = None, *, max_attempts: int = 2
+    ) -> None:
         self.model = model
         self.max_attempts = max_attempts
 

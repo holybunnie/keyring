@@ -36,6 +36,13 @@ read-only dashboard
 
 **OBSERVED · harness:** The agent boundary is deliberately narrow. The model sees runtime tool schemas, live filters, capability context, and prior test history only to propose a safe test. A deterministic validator rejects any proposal that is not tied to a discovered write tool or that does not violate a live rejection filter. The model never receives a Binance client.
 
+**OBSERVED · harness:** `agent-replay` exposes the complete recorded loop without
+opening a network connection or changing evidence. It verifies the retained
+chains, resolves the recorded runtime schema and symbol filters by run and
+capability, recomputes the deterministic gate from those exact inputs, and
+shows the recorded request, response, model interpretation, final result, and
+state proof with source references.
+
 **OBSERVED · harness:** For an unmatched gateway response, the model may propose a class and reason. The deterministic classifier remains authoritative; known codes never enter the model path, and disagreements remain in the evidence record.
 
 **OBSERVED · harness:** Gate observations and capital views are keyed by account, client, and permission mode. A balance from one account or client cannot silently supply the gate or risk statement for another; the dashboard renders each compatible context separately.

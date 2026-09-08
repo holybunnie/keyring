@@ -8,6 +8,7 @@ from typing import Any, Iterable
 
 from pydantic import ValidationError
 
+from .labels import EvidenceLabel
 from .models import EvidenceRecord
 
 
@@ -83,7 +84,7 @@ def _hash_payload(record: EvidenceRecord, prev_hash: str | None) -> str:
 class EvidenceLog:
     """OBSERVED: append-only JSONL evidence with a tamper-evident hash chain."""
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
 
     def _raw_lines(self) -> list[str]:
@@ -111,7 +112,7 @@ class EvidenceLog:
                     record_type="m0_preflight",
                     run_id=str(raw_document.get("run_id", "m0-preflight")),
                     sequence=len(records) + 1,
-                    label="OBSERVED",
+                    label=EvidenceLabel.OBSERVED,
                     source=str(raw_document.get("source", "local build environment")),
                     outcome="preflight",
                     raw_response=line,

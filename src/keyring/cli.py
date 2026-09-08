@@ -5,6 +5,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 from .classifier import classify_log
 from .config import load_probe_config, load_strategy_config
@@ -12,6 +13,7 @@ from .dashboard import serve
 from .evidence import EvidenceLog
 from .reach import least_privilege_diff
 from .agentic import AgenticSession, capture_tools_list
+from .model_client import TextModel
 
 
 def main() -> int:
@@ -31,6 +33,10 @@ def main() -> int:
     dashboard.add_argument("--strategy", default="config/strategy.yaml")
     dashboard.add_argument("--host", default="127.0.0.1")
     dashboard.add_argument("--port", type=int, default=8080)
+    dashboard.add_argument(
+        "--state-file",
+        help="serve a previously verified dashboard state snapshot without rereading evidence",
+    )
 
     freach = subparsers.add_parser(
         "financial-reach", help="layered capital view derived from the evidence log"
@@ -74,6 +80,17 @@ def main() -> int:
     )
     plan.add_argument("--max-attempts", type=int, default=2)
 
+    agent_replay = subparsers.add_parser(
+        "agent-replay",
+        help="reconstruct a recorded agent run from verified retained evidence",
+    )
+    agent_replay.add_argument("--evidence-dir", default="evidence/raw")
+    agent_replay.add_argument(
+        "--ref",
+        help="recorded model-planned probe as FILE#SEQUENCE (default: retained 0012#78)",
+    )
+    agent_replay.add_argument("--json", action="store_true")
+
     interpret = subparsers.add_parser(
         "interpret-response",
         help="deterministically classify a response and optionally record Claude's interpretation",
@@ -114,12 +131,15 @@ def main() -> int:
         return 0
     if args.command == "validate-config":
         probes = load_probe_config(args.probes)
-        strategy = load_strategy_config(args.strategy)
+        strategy_config = load_strategy_config(args.strategy)
         print(
             json.dumps(
                 {
                     "probes": {"path": str(probes.path), "sha256": probes.sha256},
-                    "strategy": {"path": str(strategy.path), "sha256": strategy.sha256},
+                    "strategy": {
+                        "path": str(strategy_config.path),
+                        "sha256": strategy_config.sha256,
+                    },
                 },
                 indent=2,
             )
@@ -129,19 +149,27 @@ def main() -> int:
         log = EvidenceLog(args.evidence)
         config = load_probe_config().model
         classifications = classify_log(log, [definition.id for definition in config.capabilities])
-        strategy = load_strategy_config(args.strategy).model
+        strategy_model = load_strategy_config(args.strategy).model
         print(
             json.dumps(
                 {
                     "classifications": [item.model_dump(mode="json") for item in classifications],
-                    "strategy_diff": least_privilege_diff(strategy, classifications),
+                    "strategy_diff": least_privilege_diff(
+                        strategy_model, classifications
+                    ),
                 },
                 indent=2,
             )
         )
         return 0
     if args.command == "dashboard":
-        serve(args.evidence, host=args.host, port=args.port, strategy_path=args.strategy)
+        serve(
+            args.evidence,
+            host=args.host,
+            port=args.port,
+            strategy_path=args.strategy,
+            state_file=args.state_file,
+        )
         return 0
     if args.command == "capture-tools":
         record = capture_tools_list(AgenticSession.from_environment(), EvidenceLog(args.evidence), run_id=args.run_id)
@@ -169,7 +197,7 @@ def main() -> int:
             raise ValueError("--history must contain a JSON list")
         if args.model_assisted and args.claude_code:
             parser.error("choose one of --model-assisted or --claude-code")
-        model = None
+        model: TextModel | None = None
         if args.claude_code:
             model = ClaudeCodeModel(model=os.environ.get("KEYRING_MODEL", "haiku"))
         elif args.model_assisted:
@@ -188,6 +216,12 @@ def main() -> int:
         finally:
             if model is not None:
                 model.close()
+        return 0
+    if args.command == "agent-replay":
+        from .agent_replay import render, replay
+
+        result = replay(args.evidence_dir, source_ref=args.ref)
+        print(json.dumps(result, indent=2, default=str) if args.json else render(result))
         return 0
     if args.command == "interpret-response":
         from .interpreter import ResponseInterpreter
@@ -212,13 +246,13 @@ def main() -> int:
         elif args.model_assisted:
             model = ClaudeMessagesModel.from_environment()
         try:
-            result = ResponseInterpreter(model).interpret(
+            interpretation = ResponseInterpreter(model).interpret(
                 raw_response=raw_response,
                 error_code=args.error_code,
                 outcome=args.outcome,
                 context=context,
             )
-            print(json.dumps(result.as_dict(), indent=2))
+            print(json.dumps(interpretation.as_dict(), indent=2))
         finally:
             if model is not None:
                 model.close()

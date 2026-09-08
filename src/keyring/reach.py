@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 
 from .labels import Classification, EvidenceLabel
 from .models import ClassificationResult, EvidenceRecord, StrategyConfig

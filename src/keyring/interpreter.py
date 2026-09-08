@@ -71,7 +71,7 @@ def deterministic_classification(error_code: str | None, outcome: str | None = N
 
 
 class ResponseInterpreter:
-    def __init__(self, model: TextModel | None = None):
+    def __init__(self, model: TextModel | None = None) -> None:
         self.model = model
 
     def interpret(
@@ -89,7 +89,7 @@ class ResponseInterpreter:
         prompt = json.dumps(
             {
                 "task": "interpret an unmatched Binance Agentic gateway response",
-                "response": redact_raw(raw_response or "")[-20000:],
+                "response": (redact_raw(raw_response) or "")[-20000:],
                 "error_code_extracted_deterministically": error_code,
                 "context": dict(context or {}),
                 "output": {

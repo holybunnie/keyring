@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, Protocol
 
 from .evidence import EvidenceLog
-from .labels import GateOutcome
+from .labels import EvidenceLabel, GateOutcome
 from .models import EvidenceRecord, ProbeDefinition, StateSnapshot
 
 if TYPE_CHECKING:
@@ -68,7 +68,7 @@ class RateLimitPolicy:
         backoff_base_seconds: float = 1,
         backoff_max_seconds: float = 32,
         max_retries: int = 3,
-    ):
+    ) -> None:
         self.retry_after_cap_seconds = retry_after_cap_seconds
         self.backoff_base_seconds = backoff_base_seconds
         self.backoff_max_seconds = backoff_max_seconds
@@ -143,7 +143,7 @@ class SafeProbeRunner:
         rate_limits: RateLimitPolicy | None = None,
         sleeper: Callable[[float], None] = time.sleep,
         interpreter: "ResponseInterpreter | None" = None,
-    ):
+    ) -> None:
         self.log = log
         self.budget = budget
         self.rate_limits = rate_limits or RateLimitPolicy()
@@ -161,7 +161,7 @@ class SafeProbeRunner:
                     EvidenceRecord(
                         record_type="positive_control_attempt",
                         run_id=run_id,
-                        label="OBSERVED",
+                        label=EvidenceLabel.OBSERVED,
                         operation="account_read",
                         response=control.response,
                         raw_response=control.raw_response,
@@ -184,7 +184,7 @@ class SafeProbeRunner:
                 EvidenceRecord(
                     record_type="positive_control",
                     run_id=run_id,
-                    label="OBSERVED",
+                    label=EvidenceLabel.OBSERVED,
                     operation="account_read",
                     response=control.response,
                     raw_response=control.raw_response,
@@ -224,7 +224,7 @@ class SafeProbeRunner:
                             EvidenceRecord(
                                 record_type="probe_attempt",
                                 run_id=run_id,
-                                label="OBSERVED",
+                                label=EvidenceLabel.OBSERVED,
                                 capability=definition.id,
                                 operation=definition.operation,
                                 response=response.response,
@@ -261,7 +261,8 @@ class SafeProbeRunner:
                 if decision.action == "HALT":
                     halt_reason = decision.reason
                 break
-            assert response is not None and final_before is not None and final_after is not None
+            if response is None or final_before is None or final_after is None:
+                raise SafetyHalt("probe loop ended without a complete response and state pair")
             state_unchanged = (
                 final_before.complete()
                 and final_after.complete()
@@ -286,7 +287,7 @@ class SafeProbeRunner:
                     EvidenceRecord(
                         record_type="probe",
                         run_id=run_id,
-                        label="OBSERVED",
+                        label=EvidenceLabel.OBSERVED,
                         capability=definition.id,
                         operation=definition.operation,
                         response=response.response,

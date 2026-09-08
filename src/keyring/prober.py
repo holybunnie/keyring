@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
 from .evidence import EvidenceLog
+from .labels import EvidenceLabel
 from .mcp import McpClient, ToolResult
 from .models import EvidenceRecord
 from .snapshot import SnapshotChain, SnapshotComponent, capture, compare
@@ -85,7 +86,7 @@ def _record(
         EvidenceRecord(
             record_type=record_type,
             run_id=run_id,
-            label="OBSERVED",
+            label=EvidenceLabel.OBSERVED,
             capability=capability,
             operation=result.name,
             request=result.request,

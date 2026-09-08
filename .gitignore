@@ -13,5 +13,9 @@ build/
 *.egg-info/
 .DS_Store
 
+# Private deployment credentials must never enter the repository.
+*.pem
+*.key
+
 # Runtime evidence is committed only when intentionally exported.
 evidence/runtime/

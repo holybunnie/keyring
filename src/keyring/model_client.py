@@ -8,7 +8,9 @@ its proposal before a separate deterministic probe path can do anything.
 from __future__ import annotations
 
 import os
-import subprocess
+# The adapter uses a fixed argument vector with shell=False and passes the
+# untrusted model prompt over stdin.
+import subprocess  # nosec B404
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -23,6 +25,8 @@ class TextModel(Protocol):
     """The only model capability KEYRING needs."""
 
     def complete(self, *, system: str, user: str) -> str: ...
+
+    def close(self) -> None: ...
 
 
 @dataclass
@@ -125,7 +129,8 @@ class ClaudeCodeModel:
             system,
         ]
         try:
-            result = subprocess.run(
+            # No shell is involved; user-controlled prompt text is sent via stdin.
+            result = subprocess.run(  # nosec B603
                 command,
                 input=user,
                 text=True,
