@@ -17,12 +17,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from .evidence import EvidenceLog
 from .mcp import McpClient, ToolResult
 from .models import EvidenceRecord
 from .snapshot import SnapshotChain, SnapshotComponent, capture, compare
+
+if TYPE_CHECKING:
+    from .interpreter import ResponseInterpreter
 
 POSITIVE_CONTROL_TOOL = "spot.getAccount"
 
@@ -64,6 +67,7 @@ class ProbeOutcome:
     state_verdict: dict[str, Any]
     discarded: bool
     reason: str | None = None
+    model_interpretation: dict[str, Any] | None = None
 
 
 def _record(
@@ -124,6 +128,10 @@ def run_probe(
     probe_design: str,
     run_id: str | None = None,
     config_sha256: str | None = None,
+    planned_by: Literal["model", "static"] = "static",
+    probe_justification: str | None = None,
+    model_proposal: dict[str, Any] | None = None,
+    interpreter: "ResponseInterpreter | None" = None,
 ) -> ProbeOutcome:
     """Run one probe with a complete before/after state proof."""
     run_id = run_id or datetime.now(timezone.utc).strftime(f"{capability}-probe-%Y%m%dT%H%M%SZ")
@@ -172,6 +180,7 @@ def run_probe(
     verdict = compare(before, after)
     discarded = not verdict["identical"]
 
+    model_interpretation: dict[str, Any] | None = None
     if discarded:
         classification = "INCONCLUSIVE"
         reason = (
@@ -182,6 +191,19 @@ def run_probe(
     else:
         reason = None
         classification = classify_error_code(probe_result.error_code)
+        if interpreter is not None:
+            interpretation = interpreter.interpret(
+                raw_response=probe_result.raw,
+                error_code=probe_result.error_code,
+                context={
+                    "capability": capability,
+                    "tool": tool,
+                    "probe_design": probe_design,
+                },
+            )
+            classification = interpretation.classifier_decision
+            if interpretation.model_assisted:
+                model_interpretation = interpretation.as_dict()
 
     _record(
         log,
@@ -198,6 +220,10 @@ def run_probe(
         gate="UNGATED",
         outcome=classification,
         config_sha256=config_sha256,
+        planned_by=planned_by,
+        probe_justification=probe_justification or probe_design,
+        model_proposal=model_proposal,
+        model_interpretation=model_interpretation,
         metadata={
             "probe_design": probe_design,
             "state_verdict": verdict,
@@ -217,4 +243,5 @@ def run_probe(
         state_verdict=verdict,
         discarded=discarded,
         reason=reason,
+        model_interpretation=model_interpretation,
     )

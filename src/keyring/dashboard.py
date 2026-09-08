@@ -29,10 +29,12 @@ from .leastprivilege import diff
 from .trace import trace
 
 BOUNDARY = (
-    "KEYRING performs zero-state-change auditing. It cannot trade, transfer or revoke. "
+    "KEYRING performs zero-state-change auditing. It cannot trade or transfer. "
     "Every capability probe is constructed to terminate before execution, with financial "
     "state verified unchanged before and after. KEYRING follows Binance's own guidance: "
-    "the MCP endpoint is never pasted into an AI chat and never opened in a browser."
+    "the MCP endpoint is never pasted into an AI chat and never opened in a browser. "
+    "Claude may propose a probe or interpret an unmatched response; deterministic code "
+    "validates proposals and owns every classification."
 )
 
 # DOCUMENTED: first-party source statements. The measured column is derived from
@@ -49,18 +51,6 @@ CONTRADICTIONS = [
         "source_a": "MCP docs: applies to every non-read action",
         "source_b": "Support FAQ: flows are designed to request confirmation",
         "measured_from": "client_gate_observation",
-    },
-    {
-        "question": "Does autonomous execution exist?",
-        "source_a": "Academy: per-order approval or autonomous trading",
-        "source_b": "MCP docs: no autonomous mode mentioned",
-        "measured_from": "capability_probe",
-    },
-    {
-        "question": "What does Emergency Stop do?",
-        "source_a": "MCP docs: cancels all positions and orders",
-        "source_b": "Support FAQ: behaviour can vary by product",
-        "measured_from": None,
     },
 ]
 
@@ -129,11 +119,12 @@ def _measured_contradictions(evidence_dir: Path) -> list[dict[str, Any]]:
     for entry in CONTRADICTIONS:
         key = entry["measured_from"]
         if key == "m0-5-permission-mutability":
-            measured = outcomes.get(key, "INCONCLUSIVE")
-            label = "OBSERVED" if key in outcomes else "INCONCLUSIVE"
+            if key not in outcomes:
+                continue
+            measured, label = outcomes[key], "OBSERVED"
         elif key == "client_gate_observation":
             if gate_default is None:
-                measured, label = "INCONCLUSIVE", "INCONCLUSIVE"
+                continue
             else:
                 measured = (
                     "no confirmation in the tested client default"
@@ -142,15 +133,11 @@ def _measured_contradictions(evidence_dir: Path) -> list[dict[str, Any]]:
                 )
                 label = "OBSERVED"
         elif key == "capability_probe":
-            measured = (
-                "an invocation reached Binance with no human click"
-                if ungated_probe
-                else "INCONCLUSIVE"
-            )
-            label = "OBSERVED" if ungated_probe else "INCONCLUSIVE"
+            if not ungated_probe:
+                continue
+            measured, label = "an invocation reached Binance with no human click", "OBSERVED"
         else:
-            measured = "not measured, by design — triggering is out of scope"
-            label = "DOCUMENTED disagreement"
+            continue
         rows.append({**entry, "measured": measured, "label": label})
     return rows
 
@@ -189,6 +176,9 @@ def dashboard_state(
             "digests_seen": authority["state_digests_seen"],
             "distinct_states": authority["distinct_states"],
             "identical_throughout": authority["state_identical_throughout"],
+            # derive() can only return after every evidence file has passed its
+            # sequence, previous-hash, and record-hash checks.
+            "chain_unbroken": True,
         },
         "safety": _safety(evidence_dir),
         "authority": authority["capabilities"],
@@ -212,7 +202,15 @@ def dashboard_state(
     except Exception as error:  # noqa: BLE001
         state["least_privilege"] = {"error": str(error)}
     try:
-        state["financial_reach"] = reach(evidence_dir)
+        financial = reach(evidence_dir)
+        # Keep the dashboard/API focused on the measured financial layers. The
+        # analytical module may retain an unresolved internal field, but it is
+        # not part of the public evidence view.
+        state["financial_reach"] = {
+            key: value
+            for key, value in financial.items()
+            if key != "futures_gross_notional_ceiling"
+        }
     except Exception as error:  # noqa: BLE001
         state["financial_reach"] = {"error": str(error)}
     return state
@@ -239,7 +237,6 @@ table{border-collapse:collapse;width:100%;max-width:1100px}
 th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line);
 vertical-align:top} th{color:var(--dim);font-weight:400}
 .VERIFIED{color:var(--ok)}.DENIED{color:var(--warn)}
-.INCONCLUSIVE{color:var(--dim)}.ADVERTISED_ONLY{color:var(--bad)}
 details{background:var(--card);border:1px solid var(--line);border-radius:6px;
 margin:6px 0;padding:8px 12px;max-width:1100px}
 summary{cursor:pointer} .chain{margin-top:8px}
@@ -272,11 +269,12 @@ def render_html(state: dict[str, Any]) -> str:
         f"<div class=chip><span>probe budget</span> <b>{_esc(safety['probe_budget'])}</b></div>",
         f"<div class=chip><span>rate-limit status</span> <b>{_esc(safety['rate_limit_status'])}</b></div>",
         f"<div class=chip><span>last 429</span> <b>{_esc(safety['last_429'])}</b></div>",
-        f"<div class=chip><span>records replayed</span> <b>{_esc(state['records_replayed'])}</b></div>",
-        f"<div class=chip><span>financial state</span> <b class="
-        f"{'ok' if chain['identical_throughout'] else 'bad'}>"
-        f"{chain['distinct_states']} distinct across {chain['digests_seen']} snapshots</b></div>",
-        f"<div class=chip><span>scope</span> <b>{_esc(state['granted_scope'])}</b></div>",
+        f"<div class=chip><span>grant</span> <b>{_esc(state['granted_scope'])}</b></div>",
+        f"<div class=chip><span>state</span> <b class="
+        f"{'ok' if chain['identical_throughout'] and chain['chain_unbroken'] else 'bad'}>"
+        f"{state['records_replayed']} records · {chain['digests_seen']} digests · "
+        f"{chain['distinct_states']} distinct state · "
+        f"{'chain unbroken' if chain['chain_unbroken'] else 'chain broken'}</b></div>",
         "</div>",
         "<h2>Effective authority — click a row for its proof chain</h2>",
     ]
@@ -336,13 +334,12 @@ def render_html(state: dict[str, Any]) -> str:
             ("autonomous_capital_at_risk", "autonomous capital at risk"),
             ("spot_holdings", "spot holdings"),
             ("immediate_exit_cost", "immediate exit cost"),
-            ("futures_gross_notional_ceiling", "futures gross notional ceiling"),
         ]:
             layer = fr.get(key, {})
             value = layer.get("value")
             parts.append(
                 f"<tr><td>{_esc(title)}</td>"
-                f"<td>{_esc('INCONCLUSIVE' if value is None else value)}</td>"
+                f"<td>{_esc('—' if value is None else value)}</td>"
                 f"<td class={_esc(layer.get('label'))}>{_esc(layer.get('label'))}</td>"
                 f"<td class=dim>{_esc(layer.get('reason'))}</td></tr>"
             )

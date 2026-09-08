@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+from pathlib import Path
 
 from .classifier import classify_log
 from .config import load_probe_config, load_strategy_config
@@ -51,6 +53,34 @@ def main() -> int:
     capture = subparsers.add_parser("capture-tools", help="capture tools/list using session values from the environment")
     capture.add_argument("--evidence", default="evidence/raw/runtime.jsonl")
     capture.add_argument("--run-id")
+
+    plan = subparsers.add_parser(
+        "plan-probe",
+        help="propose and deterministically validate one non-executing probe",
+    )
+    plan.add_argument("--tool-schema", required=True, help="JSON file containing one discovered tool schema")
+    plan.add_argument("--filters", required=True, help="JSON file containing live symbol filters")
+    plan.add_argument("--capability", required=True)
+    plan.add_argument("--symbol", required=True)
+    plan.add_argument("--tool-name")
+    plan.add_argument("--discovered-tools", help="JSON file containing discovered tool names")
+    plan.add_argument("--history", help="JSON file containing prior probe records")
+    plan.add_argument("--model-assisted", action="store_true", help="use the explicitly configured Claude model")
+    plan.add_argument("--max-attempts", type=int, default=2)
+
+    interpret = subparsers.add_parser(
+        "interpret-response",
+        help="deterministically classify a response and optionally record Claude's interpretation",
+    )
+    interpret.add_argument("--response", required=True, help="raw response file, or - for stdin")
+    interpret.add_argument("--error-code")
+    interpret.add_argument("--outcome")
+    interpret.add_argument("--context", help="JSON file containing interpretation context")
+    interpret.add_argument("--model-assisted", action="store_true", help="use the explicitly configured Claude model")
+
+    trace_cmd = subparsers.add_parser("trace", help="rebuild evidence-backed permission traces")
+    trace_cmd.add_argument("--evidence-dir", default="evidence/raw")
+    trace_cmd.add_argument("--json", action="store_true")
 
     args = parser.parse_args()
     if args.command == "financial-reach":
@@ -105,5 +135,75 @@ def main() -> int:
     if args.command == "capture-tools":
         record = capture_tools_list(AgenticSession.from_environment(), EvidenceLog(args.evidence), run_id=args.run_id)
         print(json.dumps(record.model_dump(mode="json"), indent=2))
+        return 0
+    if args.command == "plan-probe":
+        from .agent import KeyringAgent
+        from .model_client import ClaudeMessagesModel
+
+        def load_json(path: str) -> object:
+            text = sys.stdin.read() if path == "-" else Path(path).read_text(encoding="utf-8")
+            return json.loads(text)
+
+        tool_schema = load_json(args.tool_schema)
+        filters = load_json(args.filters)
+        discovered = load_json(args.discovered_tools) if args.discovered_tools else None
+        history = load_json(args.history) if args.history else []
+        if not isinstance(tool_schema, dict):
+            raise ValueError("--tool-schema must contain a JSON object")
+        if discovered is not None and isinstance(discovered, dict):
+            discovered = discovered.get("tools", [])
+        if discovered is not None and not isinstance(discovered, list):
+            raise ValueError("--discovered-tools must contain a JSON list")
+        if not isinstance(history, list):
+            raise ValueError("--history must contain a JSON list")
+        model = ClaudeMessagesModel.from_environment() if args.model_assisted else None
+        try:
+            planned = KeyringAgent(model, max_attempts=args.max_attempts).plan_probe(
+                capability=args.capability,
+                tool_schema=tool_schema,
+                tool_name=args.tool_name,
+                symbol=args.symbol,
+                filters=filters,
+                discovered_tool_names=discovered,
+                history=history,
+            )
+            print(json.dumps(planned.as_dict(), indent=2, default=str))
+        finally:
+            if model is not None:
+                model.close()
+        return 0
+    if args.command == "interpret-response":
+        from .interpreter import ResponseInterpreter
+        from .model_client import ClaudeMessagesModel
+
+        raw_response = (
+            sys.stdin.read()
+            if args.response == "-"
+            else Path(args.response).read_text(encoding="utf-8")
+        )
+        context = {}
+        if args.context:
+            context_value = json.loads(Path(args.context).read_text(encoding="utf-8"))
+            if not isinstance(context_value, dict):
+                raise ValueError("--context must contain a JSON object")
+            context = context_value
+        model = ClaudeMessagesModel.from_environment() if args.model_assisted else None
+        try:
+            result = ResponseInterpreter(model).interpret(
+                raw_response=raw_response,
+                error_code=args.error_code,
+                outcome=args.outcome,
+                context=context,
+            )
+            print(json.dumps(result.as_dict(), indent=2))
+        finally:
+            if model is not None:
+                model.close()
+        return 0
+    if args.command == "trace":
+        from .trace import render, trace
+
+        result = trace(args.evidence_dir)
+        print(json.dumps(result, indent=2, default=str) if args.json else render(result))
         return 0
     return 2

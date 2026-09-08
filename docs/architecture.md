@@ -7,6 +7,10 @@ checksummed config
       ↓
 discovery capture + safety-wrapped session transport
       ↓
+runtime schema/filter snapshot
+      ↓
+Claude proposal (optional) → deterministic proposal validator
+      ↓
 positive control
       ↓
 one non-executing probe per capability
@@ -15,7 +19,9 @@ before/after state snapshots
       ↓
 append-only raw evidence
       ↓
-derived classification and proof chain
+deterministic classification ← optional Claude interpretation of unmatched responses
+      ↓
+permission trace
       ↓
 reach, strategy diff, capital layers
       ↓
@@ -27,3 +33,7 @@ read-only dashboard
 **OBSERVED:** `capture-tools` remains discovery-only and never invokes a tool. The live probe path is separate, records the raw `tools/call` response, and is constrained by the positive control, complete state snapshots, probe budget, and rate-limit halts.
 
 **OBSERVED:** The classifier consumes evidence records rather than dashboard input, so every displayed classification has a raw evidence source and proof chain.
+
+**OBSERVED:** The agent boundary is deliberately narrow. Claude sees runtime tool schemas, live filters, capability context, and prior probe history only to propose a non-executing probe. A deterministic validator rejects any proposal that is not tied to a discovered write tool or that is not below the live notional threshold. Claude never receives a Binance client.
+
+**OBSERVED:** For an unmatched gateway response, Claude may propose a class and reason. The deterministic classifier remains authoritative; known codes never enter the model path, and disagreements remain in the evidence record.

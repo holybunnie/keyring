@@ -65,6 +65,14 @@ class EvidenceRecord(BaseModel):
     state_unchanged: bool | None = None
     control_passed: bool | None = None
     config_sha256: str | None = None
+    # Agent boundary: a probe proposal is attributed explicitly, and the
+    # deterministic validator/classifier remains the authority on what is sent
+    # and what result is published. These fields are optional for historical
+    # records written before the agent layer existed.
+    planned_by: Literal["model", "static"] | None = None
+    probe_justification: str | None = None
+    model_proposal: dict[str, Any] | None = None
+    model_interpretation: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     prev_hash: str | None = None
     record_hash: str | None = None

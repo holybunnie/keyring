@@ -60,6 +60,11 @@ def test_contradictions_are_all_labelled(state):
         assert row["measured"]
 
 
+def test_public_financial_view_contains_only_measured_layers(state):
+    assert "futures_gross_notional_ceiling" not in state["financial_reach"]
+    assert "futures gross notional ceiling" not in render_html(state)
+
+
 def test_degraded_when_evidence_is_empty(tmp_path):
     (tmp_path / "evidence.jsonl").write_text("\n")
     state = dashboard_state(tmp_path)

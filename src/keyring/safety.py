@@ -4,11 +4,14 @@ import email.utils
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Callable, Iterable, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Iterable, Literal, Protocol
 
 from .evidence import EvidenceLog
 from .labels import GateOutcome
 from .models import EvidenceRecord, ProbeDefinition, StateSnapshot
+
+if TYPE_CHECKING:
+    from .interpreter import ResponseInterpreter
 
 
 class ProbeSafetyError(RuntimeError):
@@ -124,6 +127,9 @@ class AdapterResponse:
     gate: GateOutcome | None = None
     advertised: bool | None = None
     granted_scope: str | None = None
+    planned_by: Literal["model", "static"] = "static"
+    probe_justification: str | None = None
+    model_proposal: dict[str, Any] | None = None
 
 
 class SafeProbeRunner:
@@ -136,11 +142,13 @@ class SafeProbeRunner:
         budget: ProbeBudget,
         rate_limits: RateLimitPolicy | None = None,
         sleeper: Callable[[float], None] = time.sleep,
+        interpreter: "ResponseInterpreter | None" = None,
     ):
         self.log = log
         self.budget = budget
         self.rate_limits = rate_limits or RateLimitPolicy()
         self.sleeper = sleeper
+        self.interpreter = interpreter
 
     def run_batch(self, run_id: str, adapter: ProbeAdapter, definitions: Iterable[ProbeDefinition], config_sha256: str | None = None) -> list[EvidenceRecord]:
         control_attempt = 0
@@ -231,6 +239,12 @@ class SafeProbeRunner:
                                 state_after=after,
                                 state_unchanged=unchanged,
                                 config_sha256=config_sha256,
+                                planned_by=response.planned_by,
+                                probe_justification=(
+                                    response.probe_justification
+                                    or f"static non-executing probe definition: {definition.id}"
+                                ),
+                                model_proposal=response.model_proposal,
                                 metadata={"attempt": attempt, "rate_limit_action": decision.action},
                             )
                         )
@@ -248,6 +262,25 @@ class SafeProbeRunner:
                     halt_reason = decision.reason
                 break
             assert response is not None and final_before is not None and final_after is not None
+            state_unchanged = (
+                final_before.complete()
+                and final_after.complete()
+                and final_before == final_after
+            )
+            model_interpretation = None
+            if self.interpreter is not None and state_unchanged:
+                interpretation = self.interpreter.interpret(
+                    raw_response=response.raw_response or "",
+                    error_code=response.error_code,
+                    outcome=response.outcome,
+                    context={
+                        "capability": definition.id,
+                        "tool": definition.operation,
+                        "runner": "SafeProbeRunner",
+                    },
+                )
+                if interpretation.model_assisted:
+                    model_interpretation = interpretation.as_dict()
             appended.append(
                 self.log.append(
                     EvidenceRecord(
@@ -266,8 +299,15 @@ class SafeProbeRunner:
                         granted_scope=response.granted_scope,
                         state_before=final_before,
                         state_after=final_after,
-                        state_unchanged=final_before.complete() and final_after.complete() and final_before == final_after,
+                        state_unchanged=state_unchanged,
                         config_sha256=config_sha256,
+                        planned_by=response.planned_by,
+                        probe_justification=(
+                            response.probe_justification
+                            or f"static non-executing probe definition: {definition.id}"
+                        ),
+                        model_proposal=response.model_proposal,
+                        model_interpretation=model_interpretation,
                         metadata={"attempt": attempt},
                     )
                 )

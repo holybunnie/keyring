@@ -6,6 +6,7 @@ from typing import Iterable
 from .evidence import EvidenceLog
 from .labels import Classification
 from .models import ClassificationResult, EvidenceRecord
+from .prober import classify_error_code
 
 
 def _control_records(records: Iterable[EvidenceRecord]) -> dict[str, EvidenceRecord]:
@@ -77,15 +78,15 @@ def classify_records(records: list[EvidenceRecord], capabilities: Iterable[str] 
         elif record.http_status in {403, 418} or (record.http_status is not None and record.http_status >= 500):
             classification = Classification.INCONCLUSIVE
             reason = "halt-class or server failure response"
-        elif record.outcome == "downstream_validation" and record.error_code == "-1013":
-            classification = Classification.VERIFIED
-            reason = "probe reached downstream validation and state was unchanged"
-        elif record.outcome == "authorization_denied" and record.error_code == "-2015":
-            classification = Classification.DENIED
-            reason = "authorization-class failure with a passing positive control"
         elif record.outcome == "advertised_only":
             classification = Classification.ADVERTISED_ONLY
             reason = "surface advertised the capability but the grant could not invoke it"
+        elif classify_error_code(record.error_code) == "VERIFIED":
+            classification = Classification.VERIFIED
+            reason = "probe returned a known parameter-rejection code and state was unchanged"
+        elif classify_error_code(record.error_code) == "DENIED":
+            classification = Classification.DENIED
+            reason = "authorization-class failure with a passing positive control"
         else:
             classification = Classification.INCONCLUSIVE
             reason = "response did not match a supported classification rule"

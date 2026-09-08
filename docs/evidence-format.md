@@ -11,3 +11,13 @@
 **OBSERVED:** The authenticated Agentic `tools/list` response and JSON-RPC envelope are retained as raw evidence. `capture-tools` performs discovery only; it does not invoke an MCP tool or create financial state.
 
 **OBSERVED:** The dashboard, authority map, least-privilege diff, and financial-reach view are rebuilt from the verified evidence log. No result is hand-entered.
+
+## Agent evidence boundary
+
+**OBSERVED:** New probe records carry `planned_by` (`model` or `static`) and `probe_justification`. A model proposal, when present, is stored separately from the deterministic validation result.
+
+**OBSERVED:** The Claude adapter is text-only. It has no Binance client and cannot invoke MCP tools. The deterministic proposal validator requires a discovered write tool, the requested symbol, complete schema arguments, a positive notional below the live `MIN_NOTIONAL` or `NOTIONAL` threshold, and a non-empty justification before the probe path is entered.
+
+**OBSERVED:** Known response codes are classified without a model. Only an unmatched response may be sent to the optional Claude interpreter. The evidence retains the model proposal, final deterministic classification, and disagreement flag; the model cannot change the final class.
+
+Historical records omit these new optional fields and retain their original hashes. They are not retroactively labelled as model-planned.

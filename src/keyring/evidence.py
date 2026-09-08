@@ -64,6 +64,18 @@ def _canonical(value: Any) -> str:
 
 def _hash_payload(record: EvidenceRecord, prev_hash: str | None) -> str:
     payload = record.model_dump(mode="json", exclude={"prev_hash", "record_hash"})
+    # These fields were added after the current evidence was sealed.  Omitting
+    # them when absent keeps historical record hashes verifiable without
+    # rewriting or re-sealing the evidence.  New agent records include them
+    # when they carry a value, so they remain covered by the hash chain.
+    for field in (
+        "planned_by",
+        "probe_justification",
+        "model_proposal",
+        "model_interpretation",
+    ):
+        if payload.get(field) is None:
+            payload.pop(field, None)
     payload["prev_hash"] = prev_hash
     return hashlib.sha256(_canonical(payload).encode("utf-8")).hexdigest()
 
@@ -132,6 +144,9 @@ class EvidenceLog:
                 "request": redact(record.request),
                 "response": redact(record.response),
                 "raw_response": redact_raw(record.raw_response),
+                "model_proposal": redact(record.model_proposal),
+                "model_interpretation": redact(record.model_interpretation),
+                "probe_justification": redact_raw(record.probe_justification),
                 "prev_hash": previous_hash,
             }
         )
