@@ -8,11 +8,10 @@ Two Binance accounts. Two AI clients. Four different answers to one question:
 
 They disagreed.
 
-**KEYRING is a local AI permission-auditing agent for Binance Agent OS.** It runs
-beside an authenticated Agent OS session and measures what authority that
-connected agent can actually reach. It does not trust one permission label. It
-compares the granted MCP scopes, Binance's own permission self-report, the
-runtime tools exposed to the agent, and controlled tests against the real
+**KEYRING is an AI permission auditor for Binance Agent OS.** It measures what
+authority a connected agent can actually reach. It does not trust one permission
+label. It compares the granted MCP scopes, Binance's own permission self-report,
+the runtime tools exposed to the agent, and controlled tests against the real
 exchange boundary.
 
 **Same permission set. Same 71-tool / 11-write measured trading surface. Same
@@ -23,7 +22,6 @@ self-report.** This is an observability gap, not a vulnerability claim.
 |---|---|
 | Live dashboard | [keyring.13-62-181-128.sslip.io](https://keyring.13-62-181-128.sslip.io/#overview) |
 | Agent replay | `python -m keyring agent-replay` |
-| Local dashboard | `python -m keyring dashboard` → `http://127.0.0.1:8080` |
 | Code | [github.com/holybunnie/keyring](https://github.com/holybunnie/keyring) |
 
 ## Run the complete agent replay now
@@ -54,14 +52,16 @@ The classifier has since learned the observed `-1100` pre-trade parameter class;
 replay deliberately preserves the original decision instead of rewriting
 historical evidence.
 
-Then open the full two-account product view:
+For optional local reproduction after cloning the repository, start the
+dashboard:
 
 ```bash
 python -m keyring dashboard
 ```
 
-Visit `http://127.0.0.1:8080`. The dashboard is derived from verified evidence
-at startup and provides the headline comparison, measured authority,
+Then visit `http://127.0.0.1:8080` on that same computer. This localhost address
+is not the public demo. The dashboard is derived from verified evidence at
+startup and provides the headline comparison, measured authority,
 least-privilege analysis, provenance-specific capital reach, revocation
 observation, and searchable evidence references.
 
@@ -95,12 +95,12 @@ startup. See [`deploy/README.md`](deploy/README.md) for HTTPS deployment.
 | **What did it find?** | The same permission set exposed the same measured trading surface on two accounts, while Binance's own permission check reported different answers. |
 | **What does the user get?** | An authority map, permission trace, excess-permission report, capital-at-reach view, revocation result, and interactive evidence dashboard. |
 
-## Why KEYRING runs locally
+## How fresh audits protect credentials
 
-The Binance session stays on the operator's machine. The model never receives
-the Binance session token and has no Binance client or executable tools. Only
-the deterministic measurement harness can issue a controlled request after the
-proposal passes its safety gate.
+During a fresh authorized audit, the Binance session stays on the operator's
+machine. The model never receives the Binance session token and has no Binance
+client or executable tools. Only the deterministic measurement harness can
+issue a controlled request after the proposal passes its safety gate.
 
 For this submission, the complete judge-facing experience is read-only:
 
