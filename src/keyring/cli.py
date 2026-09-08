@@ -9,7 +9,7 @@ from typing import Any
 
 from .classifier import classify_log
 from .config import load_probe_config, load_strategy_config
-from .dashboard import serve
+from .dashboard import build_dashboard_state, serve
 from .evidence import EvidenceLog
 from .reach import least_privilege_diff
 from .agentic import AgenticSession, capture_tools_list
@@ -33,10 +33,15 @@ def main() -> int:
     dashboard.add_argument("--strategy", default="config/strategy.yaml")
     dashboard.add_argument("--host", default="127.0.0.1")
     dashboard.add_argument("--port", type=int, default=8080)
-    dashboard.add_argument(
-        "--state-file",
-        help="serve a previously verified dashboard state snapshot without rereading evidence",
+    dashboard.add_argument("--state-file")
+
+    build_state = subparsers.add_parser(
+        "build-dashboard-state",
+        help="verify evidence and build a deterministic dashboard state artifact",
     )
+    build_state.add_argument("--evidence", default="evidence/raw")
+    build_state.add_argument("--strategy", default="config/strategy.yaml")
+    build_state.add_argument("--output", default="state/dashboard.json")
 
     freach = subparsers.add_parser(
         "financial-reach", help="layered capital view derived from the evidence log"
@@ -169,6 +174,13 @@ def main() -> int:
             port=args.port,
             strategy_path=args.strategy,
             state_file=args.state_file,
+        )
+        return 0
+    if args.command == "build-dashboard-state":
+        result = build_dashboard_state(args.evidence, args.strategy, args.output)
+        print(
+            f"verified dashboard state written to {args.output} "
+            f"({len(result['source_manifest'])} source files)"
         )
         return 0
     if args.command == "capture-tools":

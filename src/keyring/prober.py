@@ -15,6 +15,7 @@ Every step writes its verbatim response to the append-only evidence log.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
@@ -46,6 +47,17 @@ POSITIVE_CONTROL_TOOL = "spot.getAccount"
 # a class - it stays INCONCLUSIVE.
 PARAMETER_REJECTION_CODES = {"-1100", "-1013", "-4013", "-1111"}
 AUTHORIZATION_FAILURE_CODES = {"-2015"}
+
+
+def measurement_infrastructure_metadata() -> dict[str, str]:
+    """Return explicitly configured infrastructure metadata for a new record.
+
+    The value is operator-supplied metadata, not geolocation and not participant
+    eligibility evidence. When it is unknown, omitting it is more accurate than
+    guessing.
+    """
+    country = os.getenv("KEYRING_EGRESS_COUNTRY", "").strip().upper()
+    return {"egress_country": country} if country else {}
 
 
 def classify_error_code(code: str | None) -> str:
@@ -233,9 +245,7 @@ def run_probe(
             "discarded": discarded,
             "discard_reason": reason,
             "no_confirmation_prompt_observed": True,
-            # Static harness metadata describing the measurement infrastructure;
-            # this is not automatic geolocation and does not describe the user.
-            "egress_country": "GB",
+            **measurement_infrastructure_metadata(),
         },
     )
 

@@ -6,6 +6,18 @@ from keyring.labels import Classification
 from keyring.models import EvidenceRecord, StateSnapshot
 
 
+def test_legacy_preflight_timestamp_is_derived_deterministically(tmp_path: Path) -> None:
+    path = tmp_path / "preflight.jsonl"
+    path.write_text(
+        '{"record_type":"m0_preflight","run_id":"m0-preflight-2026-09-06T13:29:15Z"}\n',
+        encoding="utf-8",
+    )
+    first = EvidenceLog(path).records()[0]
+    second = EvidenceLog(path).records()[0]
+    assert first.occurred_at == second.occurred_at
+    assert first.occurred_at.isoformat() == "2026-09-06T13:29:15+00:00"
+
+
 def snapshot() -> StateSnapshot:
     return StateSnapshot(
         captured=True,

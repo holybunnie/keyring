@@ -80,7 +80,8 @@ def test_revocation_summary_is_exposed(state):
 
 def test_report_has_plain_language_interactions_and_safe_evidence_index(state):
     page = render_html(state)
-    assert "What can this agent actually do?" in page
+    assert "Same access. Different Binance self-report." in page
+    assert "The same access, described four ways" in page
     assert "Granted MCP scopes" in page
     assert "Permission screen" not in page
     assert "Spot: validation reached ✓" in page

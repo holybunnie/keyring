@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -108,9 +109,18 @@ class EvidenceLog:
                 # The first M0 record predates the runtime schema and is intentionally
                 # retained verbatim as raw evidence. It is a source record, not a
                 # sealed runtime event, so it cannot participate in classification.
+                run_id = str(raw_document.get("run_id", "m0-preflight"))
+                timestamp_match = re.search(
+                    r"(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)$", run_id
+                )
+                if timestamp_match is None:
+                    raise EvidenceIntegrityError("legacy M0 preflight has no captured timestamp")
                 record = EvidenceRecord(
                     record_type="m0_preflight",
-                    run_id=str(raw_document.get("run_id", "m0-preflight")),
+                    run_id=run_id,
+                    occurred_at=datetime.fromisoformat(
+                        timestamp_match.group(1).replace("Z", "+00:00")
+                    ),
                     sequence=len(records) + 1,
                     label=EvidenceLabel.OBSERVED,
                     source=str(raw_document.get("source", "local build environment")),

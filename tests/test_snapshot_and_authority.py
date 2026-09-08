@@ -9,7 +9,7 @@ from keyring.evidence import EvidenceLog
 from keyring.models import EvidenceRecord
 from keyring.mcp import Budget, RateLimitKill, WriteToolRefused, _binance_error_code, is_write_tool
 from keyring.models import StateSnapshot
-from keyring.prober import classify_error_code
+from keyring.prober import classify_error_code, measurement_infrastructure_metadata
 from keyring.snapshot import SnapshotChain, compare, digest_of, load_components
 
 
@@ -143,6 +143,16 @@ def test_only_observed_error_codes_are_classified():
     # An unobserved code is never assumed into a class.
     assert classify_error_code("-9999") == "INCONCLUSIVE"
     assert classify_error_code(None) == "INCONCLUSIVE"
+
+
+def test_egress_country_is_omitted_when_not_explicitly_configured(monkeypatch):
+    monkeypatch.delenv("KEYRING_EGRESS_COUNTRY", raising=False)
+    assert measurement_infrastructure_metadata() == {}
+
+
+def test_egress_country_is_normalized_when_explicitly_configured(monkeypatch):
+    monkeypatch.setenv("KEYRING_EGRESS_COUNTRY", " us ")
+    assert measurement_infrastructure_metadata() == {"egress_country": "US"}
 
 
 def test_authority_reports_probe_pair_identity_separately_from_snapshot_identity(tmp_path):
