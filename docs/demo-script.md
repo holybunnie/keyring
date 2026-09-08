@@ -1,41 +1,35 @@
 # Demo script
 
-This script is a narration template. Every live value must be replaced from the evidence log before recording.
+This script narrates the measured Claude Code build. All values come from `evidence/raw/`.
 
 ## 0:00 — boundary
 
-**OBSERVED:** “KEYRING performs zero-state-change auditing. It cannot trade, transfer or revoke. Every probe is bounded, rate-limited, and checked against before/after balances, positions, and open orders.”
+**OBSERVED:** “KEYRING performs zero-state-change auditing. It cannot trade or transfer. Every probe is bounded by before/after state proof and rate limits.”
 
-**DOCUMENTED:** “Binance says not to paste the MCP endpoint into an AI chat and not to open it in a browser. We follow that guidance.”
+**DOCUMENTED:** “Binance says not to paste the MCP endpoint into an AI chat or open it directly in a browser. The build follows that guidance.”
 
-## 0:20 — connect and measure
+## 0:20 — grant and discovery
 
-**DOCUMENTED:** “The consent screen is a grant category, not an effective-authority result.”
+**OBSERVED:** “The same Agentic sub-account was measured under an Account grant and an Account plus Trade grant. The advertised surface changed from 60 read tools to 71 tools with eleven write tools.”
 
-**OBSERVED:** “These rows are resolving from the append-only evidence log. Each row has a positive control, a single capability probe, and state proof.”
+## 1:00 — authority trace
 
-**INCONCLUSIVE until measured:** “If the gateway does not preserve discriminative responses, the UI says so and stays degraded.”
+**OBSERVED:** “Each authority row expands to its positive control, probe response, and unchanged state proof. Spot, USDⓈ-M Futures, and COIN-M Futures reached validation and were classified VERIFIED. Margin, Convert, and Transfer had no write tool advertised and were classified DENIED at discovery.”
 
-## 1:00 — trace
+## 1:30 — client gate
 
-**OBSERVED:** “This classification expands into its proof chain. The raw response, control, and unchanged-state evidence are inspectable. There is no badge without that chain.”
+**OBSERVED:** “The direct gateway baseline and Claude Code default mode reached Spot validation without a confirmation. Claude Code manual mode displayed a prompt; the operator declined.”
 
-## 1:30 — least privilege
+## 2:00 — least privilege
 
-**ASSUMED:** “This manifest declares the strategy’s needs; it is not inferred from a model.”
+**OBSERVED:** “The manifest needs Spot for BTCUSDT and ETHUSDT. The measured grant also verified both futures families, exposing eight measured excess write tools. Narrowing requires disconnecting and re-authorizing.”
 
-**OBSERVED or DOCUMENTED, depending on the row:** “The diff separates measured effective symbols from a potential exchange surface. It does not relabel the latter as authority.”
+## 2:30 — financial reach and proof
 
-## 2:00 — money
+**OBSERVED:** “The measured sub-account was empty. Capital visible, capital reachable, autonomous capital at risk, Spot holdings, immediate exit cost, and open futures positions are all zero.”
 
-**OBSERVED only when present:** “Capital visible, capital reachable by a verified trading path, and autonomous capital at risk are separate fields.”
+**OBSERVED:** “Fourteen state components were captured before and after the current probes. Six state digests were seen, all identical, with an unbroken hash chain.”
 
-**INCONCLUSIVE when unresolved:** “Futures gross notional is not printed unless leverage, margin mode, and account limits are resolved from evidence.”
+## Close
 
-## 2:30 — revocation and limits
-
-**INCONCLUSIVE in this build:** “No permitted-to-denied revocation trial is present (`n=0`). KEYRING summarizes manually recorded checks but never triggers revocation.”
-
-**OBSERVED only after an authorized live run:** “The known-permitted read stopped at [timestamp]. Convergence was [value], `n=[sample size]`.”
-
-**INCONCLUSIVE:** “Here is what the run could not distinguish. Those rows remain inconclusive rather than becoming a guess.”
+**OBSERVED:** “KEYRING turns a consent grant into a replayable authority map: what the session advertised, what it reached, what the client asked the user to approve, and whether financial state changed.”

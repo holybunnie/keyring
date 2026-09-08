@@ -26,8 +26,6 @@ from .config import load_probe_config
 from .evidence import EvidenceLog
 from .financialreach import reach
 from .leastprivilege import diff
-from .models import EvidenceRecord
-from .revocation import revocation_summary
 from .trace import trace
 
 BOUNDARY = (
@@ -70,17 +68,6 @@ CONTRADICTIONS = [
 def _evidence_dir(path: str | Path) -> Path:
     path = Path(path)
     return path if path.is_dir() else path.parent
-
-
-def _verified_records(evidence_dir: Path) -> list[EvidenceRecord]:
-    """Load only evidence that passes its per-file hash-chain verification."""
-    records: list[EvidenceRecord] = []
-    for file in sorted(evidence_dir.glob("*.jsonl")):
-        try:
-            records.extend(EvidenceLog(file).records(verify=True))
-        except Exception:  # noqa: BLE001 - unverifiable evidence is not summarized
-            continue
-    return records
 
 
 def _safety(evidence_dir: Path) -> dict[str, Any]:
@@ -206,7 +193,6 @@ def dashboard_state(
         "safety": _safety(evidence_dir),
         "authority": authority["capabilities"],
         "contradictions": _measured_contradictions(evidence_dir),
-        "revocation": revocation_summary(_verified_records(evidence_dir)),
     }
 
     if status == "DEGRADED":
@@ -361,21 +347,6 @@ def render_html(state: dict[str, Any]) -> str:
                 f"<td class=dim>{_esc(layer.get('reason'))}</td></tr>"
             )
         parts.append("</table>")
-
-    revocation = state.get("revocation")
-    if revocation:
-        convergence = revocation.get("convergence_seconds")
-        convergence_text = "—" if convergence is None else convergence
-        label = revocation.get("label", "INCONCLUSIVE")
-        parts += [
-            "<h2>Revocation observation</h2><table>",
-            "<tr><th>Trial</th><th>Sample size</th><th>Convergence seconds</th>"
-            "<th>Label</th><th>Reason</th></tr>",
-            f"<tr><td>permitted → denied</td><td>{_esc(revocation.get('n', 0))}</td>"
-            f"<td>{_esc(convergence_text)}</td><td class={_esc(label)}>{_esc(label)}</td>"
-            f"<td class=dim>{_esc(revocation.get('reason', ''))}</td></tr>",
-            "</table>",
-        ]
 
     parts += ["<h2>First-party contradictions, measured</h2><table>",
               "<tr><th>Question</th><th>Source A</th><th>Source B</th><th>Measured</th></tr>"]

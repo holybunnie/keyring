@@ -17,7 +17,7 @@ append-only raw evidence
       ↓
 derived classification and proof chain
       ↓
-reach, strategy diff, capital layers, revocation summary
+reach, strategy diff, capital layers
       ↓
 read-only dashboard
 ```
@@ -26,4 +26,4 @@ read-only dashboard
 
 **OBSERVED:** `capture-tools` remains discovery-only and never invokes a tool. The live probe path is separate, records the raw `tools/call` response, and is constrained by the positive control, complete state snapshots, probe budget, and rate-limit halts.
 
-**OBSERVED:** The classifier consumes evidence records rather than dashboard input. A missing control, missing state proof, ambiguous response, rate-limit halt, or server error remains `INCONCLUSIVE`.
+**OBSERVED:** The classifier consumes evidence records rather than dashboard input, so every displayed classification has a raw evidence source and proof chain.

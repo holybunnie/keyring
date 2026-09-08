@@ -2,12 +2,12 @@
 
 **OBSERVED:** Runtime evidence is JSON Lines under `evidence/raw/`. Each line is a validated `EvidenceRecord`.
 
-**OBSERVED:** The writer appends a sequence number, previous-record hash, and record hash. Loading the log verifies sequence continuity and the complete hash chain before classification.
+**OBSERVED:** The writer appends a sequence number, the previous-record hash, and a record hash. Loading the log verifies sequence continuity and the complete hash chain before analysis.
 
 **OBSERVED:** Raw responses are retained in `raw_response` after credential-shaped values are redacted. Request and response mappings are recursively redacted for authorization, token, secret, signature, cookie, password, and API-key-shaped keys.
 
-**OBSERVED:** Classifications are derived from records. The classifier recognizes `VERIFIED` only when a positive control passes, the downstream validation error is `-1013`, and complete before/after snapshots compare equal. It recognizes `DENIED` only for `-2015` with the same control and state proof. Other responses remain `INCONCLUSIVE` unless an explicit `advertised_only` outcome is recorded.
+**OBSERVED:** The authority map is derived from the evidence records. A capability is **VERIFIED** only when its positive control passes, its controlled probe reaches a recorded validation response, and complete before/after state snapshots compare equal. A capability with no write tool in the captured surface is **DENIED** at discovery.
 
-**ASSUMED:** The exact JSON-RPC envelope and tool names exposed by a live Binance Agentic session are not known until an authenticated `tools/list` response is captured. The transport client therefore permits only `tools/list` and never invents a tool surface.
+**OBSERVED:** The authenticated Agentic `tools/list` response and JSON-RPC envelope are retained as raw evidence. `capture-tools` performs discovery only; it does not invoke an MCP tool or create financial state.
 
-**OBSERVED:** `capture-tools` reads session values from the environment, calls only `tools/list`, and appends its raw response. It does not invoke an MCP tool or create financial state.
+**OBSERVED:** The dashboard, authority map, least-privilege diff, and financial-reach view are rebuilt from the verified evidence log. No result is hand-entered.

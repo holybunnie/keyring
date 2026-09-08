@@ -82,7 +82,7 @@ def test_no_unlabelled_numeric_claims(published):
     Instructions and headings are not claims. A sentence asserting a number is,
     and every hand-typed number in this build drifted from the log at least once.
     """
-    body = published.split("## Results", 1)[1].split("## Limits", 1)[0]
+    body = published.split("## Results", 1)[1].split("## Scope", 1)[0]
     offenders = []
     in_fence = False
     for line in body.splitlines():

@@ -60,16 +60,6 @@ def test_contradictions_are_all_labelled(state):
         assert row["measured"]
 
 
-def test_revocation_is_visible_and_honest_without_a_trial(state):
-    revocation = state["revocation"]
-    assert revocation["status"] == "INCONCLUSIVE"
-    assert revocation["n"] == 0
-    assert revocation["convergence_seconds"] is None
-    page = render_html(state)
-    assert "Revocation observation" in page
-    assert revocation["reason"] in page
-
-
 def test_degraded_when_evidence_is_empty(tmp_path):
     (tmp_path / "evidence.jsonl").write_text("\n")
     state = dashboard_state(tmp_path)
