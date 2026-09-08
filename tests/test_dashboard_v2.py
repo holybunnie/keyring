@@ -71,6 +71,18 @@ def test_revocation_summary_is_exposed(state):
     assert "Revocation" in render_html(state)
 
 
+def test_report_has_plain_language_interactions_and_safe_evidence_index(state):
+    page = render_html(state)
+    assert "What could this Binance connection actually do?" in page
+    assert 'id="capability-search"' in page
+    assert 'data-filter="reached"' in page
+    assert 'id="evidence-drawer"' in page
+    assert 'id="expand-all"' in page
+    assert "judg" not in page.lower()
+    assert state["evidence_index"]
+    assert all("raw_response" not in item for item in state["evidence_index"])
+
+
 def test_degraded_when_evidence_is_empty(tmp_path):
     (tmp_path / "evidence.jsonl").write_text("\n")
     state = dashboard_state(tmp_path)
