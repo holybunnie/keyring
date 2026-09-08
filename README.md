@@ -21,6 +21,7 @@ self-report.** This is an observability gap, not a vulnerability claim.
 
 | Judge entry point | Link or command |
 |---|---|
+| Live dashboard | [http://13.62.181.128](http://13.62.181.128/#overview) |
 | Agent replay | `python -m keyring agent-replay` |
 | Local dashboard | `python -m keyring dashboard` → `http://127.0.0.1:8080` |
 | Code | [github.com/holybunnie/keyring](https://github.com/holybunnie/keyring) |
