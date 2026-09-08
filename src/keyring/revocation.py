@@ -23,9 +23,23 @@ def revocation_summary(records: list[EvidenceRecord]) -> dict[str, Any]:
         permitted = [record for record in trial_records if record.outcome == "access_permitted"]
         denied = [record for record in trial_records if record.outcome == "access_denied"]
         if permitted and denied:
-            first_permitted = min(permitted, key=_timestamp)
             first_denied = min(denied, key=_timestamp)
-            delta = (first_denied.occurred_at - first_permitted.occurred_at).total_seconds()
+            # The poller records the access transition, but the web UI click
+            # is not necessarily timestamped by the client. Use the last
+            # permitted response before the first denied response so a long
+            # pre-disconnect baseline is not misreported as revocation time.
+            last_permitted = max(
+                (
+                    record
+                    for record in permitted
+                    if _timestamp(record) <= _timestamp(first_denied)
+                ),
+                key=_timestamp,
+                default=None,
+            )
+            if last_permitted is None:
+                continue
+            delta = (first_denied.occurred_at - last_permitted.occurred_at).total_seconds()
             if delta >= 0:
                 convergences.append(delta)
 
@@ -42,5 +56,8 @@ def revocation_summary(records: list[EvidenceRecord]) -> dict[str, Any]:
         "label": "OBSERVED",
         "n": len(convergences),
         "convergence_seconds": convergences[0] if len(convergences) == 1 else convergences,
-        "reason": "known-permitted reads were followed by denied reads after a recorded disconnect",
+        "reason": (
+            "known-permitted reads were followed by a denied read; interval is measured "
+            "from the last permitted response to the first denied response"
+        ),
     }

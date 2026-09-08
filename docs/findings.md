@@ -102,13 +102,26 @@ dispatch, so the measured autonomous-capital-at-risk value for this run is
 The measured immediate exit cost was `0.0054753406785 USDT`, including the
 estimated taker fee. No Futures, transfer, or withdrawal was sent.
 
-## 6. Zero-state proof
+## 6. Revocation
+
+**OBSERVED:** In one Codex CLI trial, five successive `spot.getAccount` reads
+were permitted. After the operator disconnected the agent, the next poll
+returned a transport-level `Auth required` failure. Revocation was observed at
+the Agentic session boundary with `n=1`; no reconnect followed.
+
+The timestamped interval from the last permitted response to the first denied
+response was `20.680 seconds`. This is an observation window, not a claimed
+UI-click-to-denial latency, because the web UI click was not timestamped inside
+the poller. The raw chain is
+[`0017-codex-cli-second-account-revocation-20260908.jsonl`](../evidence/raw/0017-codex-cli-second-account-revocation-20260908.jsonl).
+
+## 7. Zero-state proof
 
 **OBSERVED:** Every current probe captured fourteen state components before and
 after. The complete evidence set currently replays as:
 
 ```text
-records replayed        322
+records replayed        329
 state digests seen       18
 distinct states           7
 identical throughout   False

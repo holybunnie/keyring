@@ -59,3 +59,26 @@ def test_revocation_reports_sample_size_honestly() -> None:
     assert summary["status"] == "VERIFIED"
     assert summary["n"] == 1
     assert summary["convergence_seconds"] == 1.2
+
+
+def test_revocation_uses_last_permitted_baseline() -> None:
+    start = datetime(2026, 9, 6, 12, 0, tzinfo=timezone.utc)
+    records = [
+        EvidenceRecord(
+            record_type="revocation_check", run_id="run-2", label="OBSERVED",
+            occurred_at=start, outcome="access_permitted",
+            metadata={"trial_id": "trial-2"},
+        ),
+        EvidenceRecord(
+            record_type="revocation_check", run_id="run-2", label="OBSERVED",
+            occurred_at=start + timedelta(seconds=30), outcome="access_permitted",
+            metadata={"trial_id": "trial-2"},
+        ),
+        EvidenceRecord(
+            record_type="revocation_check", run_id="run-2", label="OBSERVED",
+            occurred_at=start + timedelta(seconds=31.5), outcome="access_denied",
+            metadata={"trial_id": "trial-2"},
+        ),
+    ]
+    summary = revocation_summary(records)
+    assert summary["convergence_seconds"] == 1.5

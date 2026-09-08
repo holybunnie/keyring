@@ -91,12 +91,24 @@ close a small BTC holding; no Futures, transfer, or withdrawal was sent.
 The measured immediate exit cost was `0.0054753406785 USDT`, including the
 estimated taker fee.
 
+### Revocation
+
+**OBSERVED:** In one Codex CLI trial, five successive `spot.getAccount` reads
+were permitted. After the operator disconnected the agent, the next poll
+returned a transport-level `Auth required` failure. Revocation was therefore
+observed at the Agentic session boundary, with `n=1`; no reconnect followed.
+
+The timestamped interval from the last permitted response to the first denied
+response was `20.680 seconds`. This is an observation window, not a claimed
+UI-click-to-denial latency, because the web UI click was not timestamped inside
+the poller. Evidence: [`0017-codex-cli-second-account-revocation-20260908.jsonl`](evidence/raw/0017-codex-cli-second-account-revocation-20260908.jsonl).
+
 ### Zero-state proof
 
 **OBSERVED:** Every current probe captures fourteen state components before and after. Each snapshot is canonicalized, SHA-256 hashed, and linked into its append-only evidence chain.
 
 ```text
-records replayed        322
+records replayed        329
 state digests seen       18
 distinct states           7
 identical throughout   False

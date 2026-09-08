@@ -28,7 +28,11 @@ This script narrates the measured KEYRING build. All values come from `evidence/
 
 **OBSERVED:** “After capability measurement, the second sub-account was funded separately. The run began with 5.60 USDT in Spot; after the approved bounded BTCUSDT buy/sell measurement, the final quoted wallet total was 5.58854065 USDT. The live bid-book walk measured 0.0054753406785 USDT of exit cost. Codex CLI default mode displayed a confirmation prompt, so autonomous capital at risk is 0 for that tested default.”
 
-**OBSERVED:** “Fourteen state components were captured before and after the capability probes. The aggregate evidence replays 322 records with 18 state digests, seven distinct captured states, identical before-and-after probe pairs, and an unbroken hash chain.”
+## 2:50 — revocation
+
+**OBSERVED:** “In one Codex CLI trial, five `spot.getAccount` reads were permitted. After Disconnect Agents, the next poll returned transport-level `Auth required`. Revocation was observed at the session boundary, n=1. The interval from the last permitted response to the first denied response was 20.680 seconds; no click-to-denial latency is claimed.”
+
+**OBSERVED:** “Fourteen state components were captured before and after the capability probes. The aggregate evidence replays 329 records with 18 state digests, seven distinct captured states, identical before-and-after probe pairs, and an unbroken hash chain.”
 
 ## Close
 
