@@ -113,10 +113,9 @@ agent, the next recorded read returned a transport-level `Auth required`
 failure. Revocation was observed at the Agentic session boundary with `n=1`; no
 reconnect followed.
 
-The timestamped interval from the last permitted response to the first denied
-response was `20.680 seconds`. This is an observation window, not a claimed
-UI-click-to-denial latency, because the web UI click was not timestamped inside
-the recording process. The raw chain is
+The next recorded access check failed after disconnect. The UI action was not
+timestamped inside the recording process, so no revocation latency is claimed.
+The raw chain is
 [`0017-codex-cli-second-account-revocation-20260908.jsonl`](../evidence/raw/0017-codex-cli-second-account-revocation-20260908.jsonl).
 
 ## 7. Every authority test left financial state unchanged
@@ -130,7 +129,7 @@ state digests seen       18
 distinct states           7
 identical throughout   False
 probe pairs identical   True
-chain unbroken         True
+active files verified True
 ```
 
 **OBSERVED · harness:** Every completed before/after pair is identical and every evidence

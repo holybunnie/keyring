@@ -1,20 +1,91 @@
 # KEYRING
 
-> An AI permission auditor for Binance Agent OS: do not infer what a connected
-> agent can do—measure it safely and preserve the proof.
+> **Your permission screen is not your agent's authority.**
 
-> No exploits. Explicitly approved measurement. No guessing. Just measured authority.
+Two Binance accounts. Two AI clients. Four different answers to one question:
 
-> Two Binance accounts. Two AI clients. Four places that answer “what can this agent do?” — and they disagreed. Every number below regenerates from saved responses.
+> **What can this connected AI agent actually do?**
 
-## The 20-second version
+They disagreed.
 
-KEYRING connects to the [Binance Agent OS](https://www.binance.com/en/agent-os)
-MCP tool surface and answers a deceptively hard question: **what can this AI
-agent actually do with this account?** It compares the granted MCP scopes,
-Binance's own permission check, the tools given to the agent, and controlled
-tests. It then turns the result into a readable report with a source record
-behind every conclusion.
+**KEYRING is a local AI permission-auditing agent for Binance Agent OS.** It runs
+beside an authenticated Agent OS session and measures what authority that
+connected agent can actually reach. It does not trust one permission label. It
+compares the granted MCP scopes, Binance's own permission self-report, the
+runtime tools exposed to the agent, and controlled tests against the real
+exchange boundary.
+
+**Same permission set. Same 71-tool / 11-write measured trading surface. Same
+Spot, USDⓈ-M, and COIN-M validation reach. Different Binance permission
+self-report.** This is an observability gap, not a vulnerability claim.
+
+| Judge entry point | Link or command |
+|---|---|
+| Agent replay | `python -m keyring agent-replay` |
+| Local dashboard | `python -m keyring dashboard` → `http://127.0.0.1:8080` |
+| Code | [github.com/holybunnie/keyring](https://github.com/holybunnie/keyring) |
+
+## Run the complete agent replay now
+
+Python 3.11 or newer is required. From a clean virtual environment:
+
+```bash
+pip install -e ".[dev]"
+python -m keyring agent-replay
+```
+
+That one read-only command verifies the retained evidence and walks through:
+
+1. Binance's runtime tool schema;
+2. live symbol filters captured during the run;
+3. the recorded model proposal;
+4. the deterministic non-execution gate, recomputed from retained inputs;
+5. the controlled Binance request;
+6. Binance's validation response;
+7. the optional model interpretation;
+8. the retained deterministic final decision; and
+9. complete before/after account-state proof.
+
+It defaults to record `0012#78`, where the model suggested `VERIFIED` but the
+deterministic classifier at capture time retained `INCONCLUSIVE`. The model could
+help interpret the response, but it could not publish the security conclusion.
+The classifier has since learned the observed `-1100` pre-trade parameter class;
+replay deliberately preserves the original decision instead of rewriting
+historical evidence.
+
+Then open the full two-account product view:
+
+```bash
+python -m keyring dashboard
+```
+
+Visit `http://127.0.0.1:8080`. The dashboard is derived from verified evidence
+at startup and provides the headline comparison, measured authority,
+least-privilege analysis, provenance-specific capital reach, revocation
+observation, and searchable evidence references.
+
+Neither command contacts Binance, reconnects an account, invokes a model,
+creates a transaction, or changes evidence.
+
+For production, generate the deterministic state artifact and serve it through
+the HTTPS reverse-proxy configuration:
+
+```bash
+python -m keyring build-dashboard-state \
+  --evidence evidence/raw \
+  --output state/dashboard.json
+python -m keyring dashboard \
+  --evidence evidence/raw \
+  --state-file state/dashboard.json \
+  --host 127.0.0.1 \
+  --port 8081
+```
+
+The builder verifies evidence, binds the artifact to source-file hashes, and
+refuses degraded input. The server verifies the artifact and source manifest at
+startup. See [`deploy/README.md`](deploy/README.md) for HTTPS deployment.
+
+## The 20-second product explanation
 
 | What matters | KEYRING's answer |
 |---|---|
@@ -23,55 +94,51 @@ behind every conclusion.
 | **What did it find?** | The same permission set exposed the same measured trading surface on two accounts, while Binance's own permission check reported different answers. |
 | **What does the user get?** | An authority map, permission trace, excess-permission report, capital-at-reach view, revocation result, and interactive evidence dashboard. |
 
-## How people use KEYRING
+## Why KEYRING runs locally
 
-**KEYRING is a local Python CLI and importable Python package. It is not an MCP
-server or an agent skill.** It runs on the reviewer’s or operator’s machine so
-the evidence and any authorized session remain local.
+The Binance session stays on the operator's machine. The model never receives
+the Binance session token and has no Binance client or executable tools. Only
+the deterministic measurement harness can issue a controlled request after the
+proposal passes its safety gate.
 
 For this submission, the complete judge-facing experience is read-only:
 
-```bash
-pip install -e .
-keyring agent-replay
-keyring dashboard
-```
-
-`agent-replay` verifies the retained evidence chain and reconstructs the
+`agent-replay` verifies the retained evidence files and reconstructs the
 recorded AI-agent experiment with a source reference at every stage. `dashboard`
 rebuilds the broader account comparison from the same evidence. Neither command
 contacts Binance, reconnects an account, calls a model, or changes evidence.
 Developers can also import the package’s planner, deterministic gate, evidence,
 classifier, and safety components when adapting the measurement harness for an
-approved audit of their own Agent OS connection. A turnkey third-party account
-audit service is not claimed by this repository.
+approved audit of their own Agent OS connection.
+
+KEYRING is currently distributed as a local CLI and Python package, not as an
+MCP server, agent skill, or hosted third-party auditing service. A turnkey fresh
+audit command is future product work; the submission experience is the complete
+retained agent replay and evidence-derived dashboard.
 
 This is a Track A / Track 1 build for the
 [Binance Agent OS Mini Hackathon](https://www.binance.com/en/square/post/362885563835358):
 it is a self-built AI agent using the Binance MCP server, which Binance lists as
 an Agent OS building block for trading and live market data.
 
-## Replay the product in 60 seconds
+## Explore the dashboard
 
-No Binance login, API key, model key, reconnect, or live trade is needed to
-inspect the retained run.
-
-```bash
-pip install -e .
-python -m keyring dashboard
-```
-
-Open `http://127.0.0.1:8080`. Start with the headline comparison, then click any
-result to open the evidence record and its proof chain. For a terminal view:
+The page opens on **Four ways to ask the same
+question** — the consent grant, Binance's own permission check, the tools the
+session handed over, and the controlled tests, compared across both measured
+accounts, with the row where they disagree marked. From there: the agent's
+plan → gate → measure → classify loop, the access map, the least-privilege
+diff, the per-client capital and confirmation table, and a searchable explorer
+over all 329 evidence records. Every chip on the page opens the record behind
+it. For additional terminal views:
 
 ```bash
 python -m keyring authority
 python -m keyring trace
 ```
 
-The three-minute walkthrough is scripted in
-[`docs/demo-script.md`](docs/demo-script.md). The architecture and trust
-boundary are documented in [`docs/architecture.md`](docs/architecture.md).
+The architecture and trust boundary are documented in
+[`docs/architecture.md`](docs/architecture.md).
 
 ## How the agent works
 
@@ -265,10 +332,10 @@ were permitted. After the operator disconnected the agent, the next recorded
 read returned a transport-level `Auth required` failure. Revocation was therefore
 observed at the Agentic session boundary, with `n=1`; no reconnect followed.
 
-The timestamped interval from the last permitted response to the first denied
-response was `20.680 seconds`. This is an observation window, not a claimed
-UI-click-to-denial latency, because the web UI click was not timestamped inside
-the recording process. Evidence: [`0017-codex-cli-second-account-revocation-20260908.jsonl`](evidence/raw/0017-codex-cli-second-account-revocation-20260908.jsonl).
+The next recorded access check failed after disconnect. The UI action was not
+timestamped inside the recording process, so KEYRING does not claim a revocation
+latency. Evidence:
+[`0017-codex-cli-second-account-revocation-20260908.jsonl`](evidence/raw/0017-codex-cli-second-account-revocation-20260908.jsonl).
 
 ### Every authority test left financial state unchanged
 
@@ -282,7 +349,7 @@ state digests seen       18
 distinct states           7
 identical throughout   False
 probe pairs identical   True
-chain unbroken         True
+active files verified True
 ```
 
 **OBSERVED · harness:** Every completed before/after probe pair is identical and every evidence file replays with an unbroken record chain. The aggregate contains separate account sessions, and optional wallet metadata changed between two captures, so aggregate snapshot identity is not asserted as a single state. A probe with incomplete or changed before/after proof is discarded.
@@ -309,8 +376,8 @@ All analysis is regenerated from the evidence log; nothing is hand-entered.
 
 ```bash
 pip install -e ".[dev]"
-python -m keyring authority
 python -m keyring agent-replay
+python -m keyring authority
 python -m keyring trace
 python -m keyring least-privilege
 python -m keyring financial-reach
@@ -325,11 +392,8 @@ safety-wrapped request → model interpretation → deterministic result → sta
 proof. The commands above regenerate the experience without reconnecting to
 Binance.
 
-For an externally reachable demo, bind the read-only server explicitly:
-
-```bash
-python -m keyring dashboard --host 0.0.0.0 --port 8080
-```
+For an externally reachable demo, keep the Python service on loopback and use
+the HTTPS reverse proxy described in [`deploy/README.md`](deploy/README.md).
 
 Model-assisted planning uses the `keyring plan-probe` subcommand with a discovered tool schema and live filters. Use `--claude-code` to call the logged-in Claude Code CLI, or `--model-assisted` with `ANTHROPIC_API_KEY` and an explicit `KEYRING_MODEL` for the API adapter. Both adapters are text-only and pass no Binance session or tools to Claude. The `keyring interpret-response` subcommand accepts the same model choices and only sends unmatched responses to Claude for a proposal.
 
@@ -362,8 +426,33 @@ leverage brackets, margin mode, and account limits were not resolved.
 **ASSUMED:** The cause of the different permission self-reports is not
 established by this run.
 
-**Egress metadata:** Probe records carry `egress_country: GB` as run metadata
-describing the measurement infrastructure. It is a static field written by
-the harness, not measured geolocation, and it does not describe the
-participant's location. Participant eligibility is established separately
-through the hackathon submission process.
+**The hash chains are tamper-evident, not tamper-proof.** Within each active
+evidence file, every record links to the preceding record. An edit that is not
+accompanied by full resealing breaks that file's verification. The chains have
+no external timestamp or signature anchor, so they establish internal
+consistency—not authorship or capture time. The superseded incomplete probe is
+retained separately and is never loaded as active evidence.
+
+**Replay reproduces the analysis, not the original capture.** Every
+number above is regenerated from `evidence/raw/` by the commands in this
+repository, and that path is fully reproducible. The measurement side is only
+partly so. The retained evidence contains nineteen record types. `src/` contains
+a producer for five of them — `capability_probe`, `m0_preflight`,
+`positive_control`, `state_component` and `tools_list`. The other fourteen,
+including `transaction`, `order_book_walk`, `financial_balance_quote`,
+`revocation_check`, `permission_report`, `instrument_inventory`,
+`account_snapshot` and `operator_observation`, were captured during authorized
+live sessions by tooling that is not in this repository. Their raw responses are
+retained, so the results can be re-derived and audited from what ships here, but
+financial reach and revocation cannot be re-run from this repository against a
+fresh account. Packaging that capture path into one operator command is planned.
+
+**Egress metadata:** Historical probe records retain their original
+`egress_country` metadata unchanged. For future records, the field is written
+only when the operator explicitly supplies `KEYRING_EGRESS_COUNTRY`; otherwise
+it is omitted. It describes measurement infrastructure, not measured
+geolocation or participant eligibility.
+
+## License
+
+KEYRING is released under the [MIT License](LICENSE).
