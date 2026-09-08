@@ -6,6 +6,21 @@ are retained rather than deleted so the audit trail stays complete.
 
 Nothing in this directory is used to derive a classification.
 
+## 0014-codex-cli-revocation-aborted.jsonl
+
+**OBSERVED:** This revocation poll was stopped before the operator disconnected
+the Agentic session. It contains permitted read checks only and no revocation
+transition, so it is retained as an incomplete attempt and excluded from the
+published evidence path. Its record hashes were not recomputed.
+
+## 0016-codex-cli-revocation-timeout.jsonl
+
+**OBSERVED:** This revocation poll reached its safety timeout while the
+operator left the Agentic session connected. It contains permitted read checks
+only and no revocation transition, so it is retained as a timeout attempt and
+excluded from the published evidence path. Its record hashes were not
+recomputed.
+
 ## 0006-m0-3-probe.jsonl
 
 **OBSERVED:** This is the first `spot.newOrder` probe. Its response — `-1013`,

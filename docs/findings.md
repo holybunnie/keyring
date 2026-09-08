@@ -16,6 +16,10 @@ advertised eleven writes and three controlled probes reached order validation.
 and `enableReading: true` while the selected grant again exposed 71 tools and
 eleven writes.
 
+This was observed on two Agentic sub-accounts through two supported clients:
+Claude Code on the original account ([raw permission record](../evidence/raw/0005-m0-run-b.jsonl))
+and Codex CLI on the second ([raw permission record](../evidence/raw/0012-codex-cli-second-account.jsonl)).
+
 This is an observability gap, not a vulnerability. The measured result is that
 the credential self-report did not describe authority consistently across the
 two sub-accounts. The cause remains **ASSUMED**; the finding does not depend on
@@ -85,14 +89,18 @@ two. That inventory is a potential surface only and is not merged with measured
 authority.
 
 **OBSERVED:** The second sub-account was funded after capability measurement.
-A fresh complete read-only snapshot found `5.60000000 USDT` in Spot, and a
-wallet reading explicitly quoted in USDT returned `5.6` for the Spot wallet.
-The measured capital-visible and capital-reachable values are therefore
-`5.6 USDT`.
+The initial complete snapshot found `5.60000000 USDT` in Spot. After the
+approved bounded BTCUSDT buy/sell measurement, the final wallet reading
+explicitly quoted in USDT returned `5.58854065 USDT`; Binance retained
+`0.00000993 BTC` as below-minimum-lot dust.
 
 **OBSERVED:** Codex CLI default mode displayed a confirmation prompt before
 dispatch, so the measured autonomous-capital-at-risk value for this run is
 `0`.
+
+**OBSERVED:** The live BTCUSDT bid book was walked for the post-buy BTC holding.
+The measured immediate exit cost was `0.0054753406785 USDT`, including the
+estimated taker fee. No Futures, transfer, or withdrawal was sent.
 
 ## 6. Zero-state proof
 
@@ -100,9 +108,9 @@ dispatch, so the measured autonomous-capital-at-risk value for this run is
 after. The complete evidence set currently replays as:
 
 ```text
-records replayed        268
-state digests seen       15
-distinct states           4
+records replayed        322
+state digests seen       18
+distinct states           7
 identical throughout   False
 probe pairs identical   True
 chain unbroken         True

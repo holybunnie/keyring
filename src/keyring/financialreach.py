@@ -109,6 +109,25 @@ def _latest_quoted_wallet_balances(
     return latest
 
 
+def _latest_order_book_walk(
+    evidence_dir: str | Path,
+) -> tuple[Decimal, EvidenceRecord, dict[str, Any]] | None:
+    """Return the newest retained, source-backed exit-cost calculation."""
+    latest: tuple[Decimal, EvidenceRecord, dict[str, Any]] | None = None
+    for path in sorted(Path(evidence_dir).glob("*.jsonl")):
+        for record in EvidenceLog(path).records(verify=True):
+            if record.record_type != "order_book_walk":
+                continue
+            payload = _record_payload(record)
+            if not isinstance(payload, dict):
+                continue
+            value = _decimal(payload.get("exit_cost_usdt"))
+            if value is None:
+                continue
+            latest = (value, record, payload)
+    return latest
+
+
 def latest_complete_snapshot(
     evidence_dir: str | Path = "evidence/raw",
 ) -> tuple[StateSnapshot | None, EvidenceRecord | None]:
@@ -265,7 +284,18 @@ def reach(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
             len(non_zero), "OBSERVED", "spot balances with a non-zero free or locked amount",
             ["spot_account"],
         )
-        if non_zero:
+        walk = _latest_order_book_walk(evidence_dir)
+        if non_zero and walk is not None:
+            value, walk_record, walk_payload = walk
+            exit_cost = _layer(
+                str(value),
+                "OBSERVED",
+                "live BTCUSDT bids were walked for the post-buy BTC holding; value includes "
+                f"the estimated taker fee across {walk_payload.get('levels_consumed', '?')} "
+                "order-book level(s)",
+                [f"record:{walk_record.sequence}"],
+            )
+        elif non_zero:
             exit_cost = _layer(
                 None,
                 "INCONCLUSIVE",

@@ -26,12 +26,14 @@ from .config import load_probe_config
 from .evidence import EvidenceLog
 from .financialreach import reach
 from .leastprivilege import diff
+from .revocation import revocation_summary
 from .trace import trace
 
 BOUNDARY = (
-    "KEYRING performs zero-state-change auditing. It cannot trade or transfer. "
-    "Every capability probe is constructed to terminate before execution, with financial "
-    "state verified unchanged before and after. KEYRING follows Binance's own guidance: "
+    "KEYRING's capability probes are deliberately non-executing. Every probe is "
+    "constructed to terminate before execution, with financial state verified unchanged "
+    "before and after. A separate financial-reach measurement may contain an explicitly "
+    "approved, separately logged transaction. KEYRING follows Binance's own guidance: "
     "the MCP endpoint is never pasted into an AI chat and never opened in a browser. "
     "Claude may propose a probe or interpret an unmatched response; deterministic code "
     "validates proposals and owns every classification."
@@ -201,6 +203,10 @@ def dashboard_state(
         "authority": authority["capabilities"],
         "contradictions": _measured_contradictions(evidence_dir),
     }
+    all_records = []
+    for file in sorted(evidence_dir.glob("*.jsonl")):
+        all_records.extend(EvidenceLog(file).records(verify=True))
+    state["revocation"] = revocation_summary(all_records)
 
     if status == "DEGRADED":
         state["reason"] = (
@@ -362,6 +368,18 @@ def render_html(state: dict[str, Any]) -> str:
                 f"<td class=dim>{_esc(layer.get('reason'))}</td></tr>"
             )
         parts.append("</table>")
+
+    revocation = state.get("revocation")
+    if isinstance(revocation, dict):
+        parts += [
+            "<h2>Revocation</h2><table>",
+            "<tr><th>Status</th><th>Trials</th><th>Convergence</th><th>Reason</th></tr>",
+            f"<tr><td class={_esc(revocation.get('label'))}>{_esc(revocation.get('status'))}</td>"
+            f"<td>{_esc(revocation.get('n'))}</td>"
+            f"<td>{_esc(revocation.get('convergence_seconds') if revocation.get('convergence_seconds') is not None else '—')}</td>"
+            f"<td class=dim>{_esc(revocation.get('reason'))}</td></tr>",
+            "</table>",
+        ]
 
     parts += ["<h2>First-party contradictions, measured</h2><table>",
               "<tr><th>Question</th><th>Source A</th><th>Source B</th><th>Measured</th></tr>"]

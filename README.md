@@ -2,7 +2,7 @@
 
 > Binance shows you what you authorized. KEYRING measures what that authorization can actually do.
 
-> No exploits. No transactions. No guessing. Just measured authority.
+> No exploits. Explicitly approved measurement. No guessing. Just measured authority.
 
 ## Results
 
@@ -11,6 +11,8 @@
 **OBSERVED:** On the original Claude Code sub-account, `wallet.getApiKeyPermission` returned `enableSpotAndMarginTrading: false`, `enableFutures: false`, and `enableReading: true` under both measured grants. At the same time, the trade-grant surface advertised eleven trading tools and three controlled probes reached Binance order validation.
 
 **OBSERVED:** On the second sub-account, authorized through Codex CLI, the same endpoint returned `enableSpotAndMarginTrading: true`, `enableFutures: true`, `enableMargin: false`, and `enableReading: true` while the selected grant again exposed 71 tools and eleven writes. The self-report therefore differed across the two measured sub-accounts.
+
+This result was observed on two Agentic sub-accounts through two supported clients: Claude Code on the original account ([raw permission record](evidence/raw/0005-m0-run-b.jsonl)) and Codex CLI on the second ([raw permission record](evidence/raw/0012-codex-cli-second-account.jsonl)).
 
 This is an observability gap, not a vulnerability. The endpoint an operator would query to audit the session did not describe authority consistently across measured sub-accounts and did not align with the first session's surface and invocation result. The cause remains **ASSUMED**; the finding does not depend on explaining it.
 
@@ -66,30 +68,37 @@ This is an observability gap, not a vulnerability. The endpoint an operator woul
 ### Financial reach
 
 **OBSERVED:** The second Agentic sub-account was funded separately after its
-capability measurement. A fresh complete read-only snapshot found
-`5.60000000 USDT` in its Spot account, and a wallet reading explicitly quoted
-in USDT returned `5.6` for the Spot wallet.
+capability measurement. The initial complete snapshot found `5.60000000 USDT`
+in its Spot account. After the approved bounded BTCUSDT buy/sell measurement,
+the final wallet reading explicitly quoted in USDT returned
+`5.58854065 USDT`; Binance retained `0.00000993 BTC` as below-minimum-lot
+dust.
 
 ```text
-Capital visible                                5.6 USDT
-Capital reachable by verified trading paths    5.6 USDT
+Capital visible                           5.58854065 USDT
+Capital reachable by verified trading paths 5.58854065 USDT
 Autonomous capital at risk                       0
-Spot holdings                                    1
+Spot holdings                                    2
 Open futures positions                           0
 ```
 
 **OBSERVED:** The autonomous-capital figure is zero for this tested default
-because Codex CLI displayed a confirmation prompt before dispatch. No order or
-transfer was sent during the funded measurement.
+because Codex CLI displayed a confirmation prompt before dispatch. The approved
+measurement used one bounded Spot buy and one Spot sell solely to create and
+close a small BTC holding; no Futures, transfer, or withdrawal was sent.
+
+**OBSERVED:** The live BTCUSDT bid book was walked for the post-buy holding.
+The measured immediate exit cost was `0.0054753406785 USDT`, including the
+estimated taker fee.
 
 ### Zero-state proof
 
 **OBSERVED:** Every current probe captures fourteen state components before and after. Each snapshot is canonicalized, SHA-256 hashed, and linked into its append-only evidence chain.
 
 ```text
-records replayed        268
-state digests seen       15
-distinct states           4
+records replayed        322
+state digests seen       18
+distinct states           7
 identical throughout   False
 probe pairs identical   True
 chain unbroken         True

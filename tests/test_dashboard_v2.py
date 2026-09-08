@@ -65,6 +65,12 @@ def test_public_financial_view_contains_only_measured_layers(state):
     assert "futures gross notional ceiling" not in render_html(state)
 
 
+def test_revocation_summary_is_exposed(state):
+    assert "revocation" in state
+    assert state["revocation"]["n"] >= 0
+    assert "Revocation" in render_html(state)
+
+
 def test_degraded_when_evidence_is_empty(tmp_path):
     (tmp_path / "evidence.jsonl").write_text("\n")
     state = dashboard_state(tmp_path)

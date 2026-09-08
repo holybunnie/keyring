@@ -7,6 +7,7 @@ import pytest
 
 from keyring.financialreach import (
     WALLET_CAPABILITY,
+    _latest_order_book_walk,
     _latest_quoted_wallet_balances,
     latest_complete_snapshot,
     reach,
@@ -108,7 +109,9 @@ def test_exit_cost_is_not_asserted_when_holdings_exist(result):
     holdings = result["spot_holdings"]
     exit_cost = result["immediate_exit_cost"]
     if holdings["label"] == "OBSERVED" and holdings["value"]:
-        assert exit_cost["label"] == "INCONCLUSIVE"
+        assert exit_cost["label"] in {"OBSERVED", "INCONCLUSIVE"}
+        if exit_cost["label"] == "OBSERVED":
+            assert exit_cost["value"] is not None
 
 
 def test_snapshot_used_is_complete(result):
@@ -161,3 +164,26 @@ def test_quoted_wallet_reading_is_preferred_for_capital_units(tmp_path):
     total, per_wallet, _ = _latest_quoted_wallet_balances(tmp_path)
     assert total == Decimal("5.60")
     assert per_wallet["Spot"] == Decimal("5.60")
+
+
+def test_order_book_walk_is_read_from_evidence(tmp_path):
+    path = tmp_path / "walk.jsonl"
+    log = EvidenceLog(path)
+    log.append(
+        EvidenceRecord(
+            record_type="order_book_walk",
+            run_id="walk",
+            label="OBSERVED",
+            operation="spot.depth",
+            response={
+                "symbol": "BTCUSDT",
+                "exit_cost_usdt": "0.0054753406785",
+                "levels_consumed": 1,
+            },
+            outcome="exit_cost_measured",
+        )
+    )
+
+    value, _, payload = _latest_order_book_walk(tmp_path)
+    assert value == Decimal("0.0054753406785")
+    assert payload["levels_consumed"] == 1

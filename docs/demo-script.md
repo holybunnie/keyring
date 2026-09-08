@@ -4,7 +4,7 @@ This script narrates the measured KEYRING build. All values come from `evidence/
 
 ## 0:00 — boundary
 
-**OBSERVED:** “KEYRING performs zero-state-change auditing. It cannot trade or transfer. Every probe is bounded by before/after state proof and rate limits.”
+**OBSERVED:** “KEYRING's capability probes are deliberately non-executing and bounded by before/after state proof and rate limits. The separate financial-reach measurement used one explicitly approved Spot buy/sell pair.”
 
 **DOCUMENTED:** “Binance says not to paste the MCP endpoint into an AI chat or open it directly in a browser. The build follows that guidance.”
 
@@ -26,9 +26,9 @@ This script narrates the measured KEYRING build. All values come from `evidence/
 
 ## 2:30 — financial reach and proof
 
-**OBSERVED:** “After capability measurement, the second sub-account was funded separately. The fresh read-only snapshot shows 5.6 USDT visible and 5.6 USDT reachable through verified trading paths. Codex CLI default mode displayed a confirmation prompt, so autonomous capital at risk is 0 for that tested default.”
+**OBSERVED:** “After capability measurement, the second sub-account was funded separately. The run began with 5.60 USDT in Spot; after the approved bounded BTCUSDT buy/sell measurement, the final quoted wallet total was 5.58854065 USDT. The live bid-book walk measured 0.0054753406785 USDT of exit cost. Codex CLI default mode displayed a confirmation prompt, so autonomous capital at risk is 0 for that tested default.”
 
-**OBSERVED:** “Fourteen state components were captured before and after the current probes. The aggregate evidence replays 268 records with 15 state digests, four distinct captured states, identical before-and-after probe pairs, and an unbroken hash chain.”
+**OBSERVED:** “Fourteen state components were captured before and after the capability probes. The aggregate evidence replays 322 records with 18 state digests, seven distinct captured states, identical before-and-after probe pairs, and an unbroken hash chain.”
 
 ## Close
 
