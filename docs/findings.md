@@ -6,15 +6,15 @@ sub-account and a second sub-account authorized through Codex CLI.
 
 ## 1. The permission self-report diverged by sub-account
 
-**OBSERVED:** On the original account, `wallet.getApiKeyPermission` returned
+**OBSERVED · harness:** On the original account, Binance's own permission check reported
 `enableSpotAndMarginTrading: false`, `enableFutures: false`, and
 `enableReading: true` under both measured grants. The trade-grant surface
-advertised eleven writes and three controlled probes reached order validation.
+advertised eleven trading writes and three controlled tests reached order validation.
 
-**OBSERVED:** On the second account, the same endpoint returned
+**OBSERVED · harness:** On the second account, the same endpoint returned
 `enableSpotAndMarginTrading: true`, `enableFutures: true`, `enableMargin: false`,
 and `enableReading: true` while the selected grant again exposed 71 tools and
-eleven writes.
+eleven trading writes.
 
 This was observed on two Agentic sub-accounts through two supported clients:
 Claude Code on the original account ([raw permission record](../evidence/raw/0005-m0-run-b.jsonl))
@@ -25,9 +25,9 @@ the credential self-report did not describe authority consistently across the
 two sub-accounts. The cause remains **ASSUMED**; the finding does not depend on
 explaining it.
 
-## 2. The consent label and effective surface diverged
+## 2. The consent label and the effective surface diverged
 
-**OBSERVED:** The toggle labelled **Spot & Margin trading** produced
+**OBSERVED · operator:** The toggle labelled **Spot & Margin trading** produced
 `mcp:spot:trade`, and no margin write tool appeared under that grant.
 
 **NOT MEASURED:** Whether the measured account was margin-eligible. The
@@ -36,19 +36,21 @@ configuration, or a combination. Enforcement was not shown to be weak.
 
 ## 3. Confirmation before validation was client-dependent
 
-**OBSERVED:** A deliberately non-executing Spot `LIMIT BUY` reached Binance
-filter validation with `-1013 Filter failure: PERCENT_PRICE_BY_SIDE` by direct
-gateway call and through Claude Code default mode. Claude Code manual mode
-displayed a prompt and the operator declined. Codex CLI default mode displayed
-a prompt before its compact MCP dispatcher stopped on a tool-name error, before
-Binance validation.
+**OBSERVED · harness:** A deliberately non-executing Spot `LIMIT BUY` reached
+Binance filter validation with `-1013 Filter failure: PERCENT_PRICE_BY_SIDE` by
+direct gateway call.
+
+**OBSERVED · operator:** Claude Code default mode reached the same validation
+without a prompt. Claude Code manual mode displayed a prompt and the operator
+declined. Codex CLI default mode displayed a prompt before its compact MCP
+dispatcher stopped on a tool-name error, before Binance validation.
 
 | Path | Gate result | Evidence |
 |---|---|---|
-| Direct gateway | No confirmation | `0007-full-proof-probes.jsonl` |
-| Claude Code, default mode | No confirmation | `0010-client-matrix.jsonl` |
-| Claude Code, manual mode | Prompt shown; operator declined | `0010-client-matrix.jsonl` |
-| Codex CLI, default mode | Prompt shown; dispatcher stopped before Binance | `0012-codex-cli-second-account.jsonl#141` |
+| Direct gateway | No confirmation · harness | `0007-full-proof-probes.jsonl` |
+| Claude Code, default mode | No confirmation · operator | `0010-client-matrix.jsonl` |
+| Claude Code, manual mode | Prompt shown; operator declined · operator | `0010-client-matrix.jsonl` |
+| Codex CLI, default mode | Prompt shown; dispatcher stopped before Binance · operator | `0012-codex-cli-second-account.jsonl#141` |
 
 **DOCUMENTED:** Binance describes trades and transfers as confirmed by the user
 first.
@@ -59,8 +61,8 @@ so no claim is made about that step.
 
 ## 4. Enforcement behaved as measured
 
-**OBSERVED:** Both selected-grant surfaces advertised 71 tools, including
-eleven writes. All three product paths in both capability runs reached
+**OBSERVED · harness:** Both selected-grant surfaces advertised 71 tools, including
+eleven trading writes. All three product paths in both capability runs reached
 parameter-rejection responses while each probe's complete before/after state
 proof remained identical.
 
@@ -70,54 +72,56 @@ proof remained identical.
 | USDⓈ-M futures | `futures_usds.newOrder`, `-4013` | `futures_usds.newOrder`, `-4013` |
 | COIN-M futures | `futures_coin.newOrder`, `-1111` | `futures_coin.newOrder`, `-4013` |
 
-**OBSERVED:** Margin, Convert, and Transfer exposed no write tool in the
+**OBSERVED · harness:** Margin, Convert, and Transfer exposed no write tool in the
 selected surface and were classified **DENIED** at discovery. The second-run
 Spot `-1100` was a malformed numeric-parameter rejection from the first model
 proposal; it was still before execution and is now a deterministic known
 parameter-rejection class. New model numeric arguments are normalized before
 dispatch.
 
-## 5. Effective authority, least privilege, and financial reach
+## 5. What the agent needs versus what it has, and what that is worth
 
-**OBSERVED:** The strategy needs Spot for `BTCUSDT` and `ETHUSDT`. The measured
+**OBSERVED · harness:** The strategy needs Spot for `BTCUSDT` and `ETHUSDT`. The measured
 grant also verified both futures families, producing measured excess of
 `coin_m_futures` and `usd_m_futures`, with eight excess write tools. Narrowing
 requires disconnecting and re-authorizing.
 
-**OBSERVED:** The venue lists 1,362 spot instruments while the strategy declares
+**OBSERVED · harness:** The venue lists 1,362 spot instruments while the strategy declares
 two. That inventory is a potential surface only and is not merged with measured
 authority.
 
-**OBSERVED:** The second sub-account was funded after capability measurement.
+**OBSERVED · harness:** The second sub-account was funded after capability measurement.
 The initial complete snapshot found `5.60000000 USDT` in Spot. After the
 approved bounded BTCUSDT buy/sell measurement, the final wallet reading
-explicitly quoted in USDT returned `5.58854065 USDT`; Binance retained
-`0.00000993 BTC` as below-minimum-lot dust.
+explicitly quoted in USDT returned `5.58854065 USDT`. The measurement bought
+`0.00007 BTC`, paid `0.00000007 BTC` commission, and sold `0.00006 BTC` because
+the LOT_SIZE step was `0.00001`; no Binance-retained dust is claimed.
 
-**OBSERVED:** Codex CLI default mode displayed a confirmation prompt before
+**OBSERVED · operator:** Codex CLI default mode displayed a confirmation prompt before
 dispatch, so the measured autonomous-capital-at-risk value for this run is
 `0`.
 
-**OBSERVED:** The live BTCUSDT bid book was walked for the post-buy BTC holding.
+**OBSERVED · harness:** The live BTCUSDT bid book was walked for the post-buy BTC holding.
 The measured immediate exit cost was `0.0054753406785 USDT`, including the
 estimated taker fee. No Futures, transfer, or withdrawal was sent.
 
 ## 6. Revocation
 
-**OBSERVED:** In one Codex CLI trial, five successive `spot.getAccount` reads
-were permitted. After the operator disconnected the agent, the next poll
-returned a transport-level `Auth required` failure. Revocation was observed at
-the Agentic session boundary with `n=1`; no reconnect followed.
+**OBSERVED · operator:** In one Codex CLI trial, five recorded
+`spot.getAccount` reads were permitted. After the operator disconnected the
+agent, the next recorded read returned a transport-level `Auth required`
+failure. Revocation was observed at the Agentic session boundary with `n=1`; no
+reconnect followed.
 
 The timestamped interval from the last permitted response to the first denied
 response was `20.680 seconds`. This is an observation window, not a claimed
 UI-click-to-denial latency, because the web UI click was not timestamped inside
-the poller. The raw chain is
+the recording process. The raw chain is
 [`0017-codex-cli-second-account-revocation-20260908.jsonl`](../evidence/raw/0017-codex-cli-second-account-revocation-20260908.jsonl).
 
-## 7. Zero-state proof
+## 7. Every authority test left financial state unchanged
 
-**OBSERVED:** Every current probe captured fourteen state components before and
+**OBSERVED · harness:** Every current authority test captured fourteen state components before and
 after. The complete evidence set currently replays as:
 
 ```text
@@ -129,7 +133,7 @@ probe pairs identical   True
 chain unbroken         True
 ```
 
-**OBSERVED:** Every completed before/after pair is identical and every evidence
+**OBSERVED · harness:** Every completed before/after pair is identical and every evidence
 file replays with an unbroken record chain. The aggregate contains independent
 account sessions, and optional wallet metadata changed between captures, so a
 single aggregate snapshot state is not asserted.

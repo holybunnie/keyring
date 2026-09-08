@@ -4,34 +4,89 @@
 
 > No exploits. Explicitly approved measurement. No guessing. Just measured authority.
 
+> Two Binance accounts. Two AI clients. Four places that answer “what can this agent do?” — and they disagreed. Every number below regenerates from saved responses.
+
+## What can this agent actually do?
+
+**OBSERVED · harness:** The permission screen, Binance's own permission check,
+the tools handed to the agent, and controlled tests answered different parts of
+the same question. The comparison below is rebuilt from the evidence log.
+
+| Account | Permission screen | Binance's own permission check | Tools handed to the agent | Controlled tests |
+|---|---|---|---|---|
+| Account A | Spot & Margin trading · Futures | Spot ✕ · Futures ✕ | 71 tools · 11 trading writes | Spot ✓ · USDⓈ-M ✓ · COIN-M ✓ |
+| Account B | Spot & Margin trading · Futures | Spot ✓ · Futures ✓ | 71 tools · 11 trading writes | Spot ✓ · USDⓈ-M ✓ · COIN-M ✓ |
+
+**OBSERVED · harness:** Account A reported Spot and Futures trading disabled.
+Account B reported them enabled. Both trade-grant surfaces exposed the same 71
+tools and 11 writes, and KEYRING independently confirmed the same three trading
+families on both.
+
+**Same permission set. Same measured trading surface. Different self-report.**
+
+## Safety boundary
+
+**OBSERVED · harness:** The authority tests were requests built to fail at
+exchange checks before execution. Each had a connection check and a complete
+before/after account-state snapshot. A separate buy/sell measurement was
+explicitly approved and is reported separately.
+
+## The agent
+
+**OBSERVED · harness:** KEYRING loads the tool schema Binance discovers at runtime
+together with the target symbol's live exchange filters, and the agent uses them
+to propose a trading-shaped test: the tool, the arguments, the specific filter it
+expects to violate, and a written justification.
+
+**OBSERVED · harness:** The model cannot execute directly. Every proposal must
+pass a deterministic non-execution gate — `planner.validate_proposal` requires
+the notional to fall below the live `MIN_NOTIONAL` and a named live filter to be
+violated — before the harness may send it. Only then does it run, safety-wrapped,
+with a connection check and a full before/after state snapshot. Responses no
+deterministic matcher recognises go back to the model for interpretation, and
+the deterministic classifier owns the published result.
+
+**OBSERVED · harness:** The gate is the feature. Every probe record carries
+`planned_by` and the model's reasoning. Where the model and classifier
+disagreed, both are preserved verbatim — including active record
+[`0012#78`](evidence/raw/0012-codex-cli-second-account.jsonl#L78), where the
+model proposed `VERIFIED` and the deterministic result was `INCONCLUSIVE`.
+Every recorded authority test was rejected before execution and left financial
+state unchanged.
+
+The historical evidence remains unchanged. Older probe records are shown as
+planning fields not recorded, rather than falsely labelled as model output.
+
 ## Results
 
 ### The permission self-report diverged by sub-account
 
-**OBSERVED:** On the original Claude Code sub-account, `wallet.getApiKeyPermission` returned `enableSpotAndMarginTrading: false`, `enableFutures: false`, and `enableReading: true` under both measured grants. At the same time, the trade-grant surface advertised eleven trading tools and three controlled probes reached Binance order validation.
+**OBSERVED · harness:** On the original Claude Code sub-account, Binance's own permission check reported Spot and Futures trading disabled: `enableSpotAndMarginTrading: false`, `enableFutures: false`, and `enableReading: true` under both measured grants. At the same time, the trade-grant surface advertised eleven trading write tools and three controlled tests reached Binance order validation.
 
-**OBSERVED:** On the second sub-account, authorized through Codex CLI, the same endpoint returned `enableSpotAndMarginTrading: true`, `enableFutures: true`, `enableMargin: false`, and `enableReading: true` while the selected grant again exposed 71 tools and eleven writes. The self-report therefore differed across the two measured sub-accounts.
+**OBSERVED · harness:** On the second sub-account, authorized through Codex CLI, the same endpoint returned `enableSpotAndMarginTrading: true`, `enableFutures: true`, `enableMargin: false`, and `enableReading: true` while the selected grant again exposed 71 tools and eleven writes. The self-report therefore differed across the two measured sub-accounts.
 
 This result was observed on two Agentic sub-accounts through two supported clients: Claude Code on the original account ([raw permission record](evidence/raw/0005-m0-run-b.jsonl)) and Codex CLI on the second ([raw permission record](evidence/raw/0012-codex-cli-second-account.jsonl)).
 
-This is an observability gap, not a vulnerability. The endpoint an operator would query to audit the session did not describe authority consistently across measured sub-accounts and did not align with the first session's surface and invocation result. The cause remains **ASSUMED**; the finding does not depend on explaining it.
+This is an observability gap, not a vulnerability. The endpoint an operator would query to audit the session did not describe authority consistently across the two measured sub-accounts, while both sessions exposed the same measured trading surface. The cause remains **ASSUMED**; the finding does not depend on explaining it.
 
-### The consent label and effective surface diverged
+### The consent label and the effective surface diverged
 
-**OBSERVED:** The consent toggle labelled **Spot & Margin trading** produced `mcp:spot:trade`, and no margin write tool appeared under that grant.
+**OBSERVED · operator:** The consent toggle labelled **Spot & Margin trading** produced `mcp:spot:trade`, and no margin write tool appeared under that grant.
 
 **NOT MEASURED:** Whether the measured account was margin-eligible. The divergence may therefore reflect the label, account eligibility, sub-account configuration, or a combination. Enforcement was not shown to be weak.
 
 ### Confirmation before validation was client-dependent
 
-**OBSERVED:** A deliberately non-executing Spot `LIMIT BUY` for `0.00001` BTC at `0.01` USDT reached Binance filter validation with `-1013 Filter failure: PERCENT_PRICE_BY_SIDE` by direct gateway call and through Claude Code at its default permission mode. In Claude Code manual permission mode a prompt was shown and the operator declined. Codex CLI default mode also displayed a prompt before its compact MCP dispatcher stopped on a tool-name error, before Binance validation.
+**OBSERVED · harness:** A deliberately non-executing Spot `LIMIT BUY` for `0.00001` BTC at `0.01` USDT reached Binance filter validation with `-1013 Filter failure: PERCENT_PRICE_BY_SIDE` by direct gateway call.
+
+**OBSERVED · operator:** Claude Code at its default permission mode also reached validation without a prompt. In Claude Code manual permission mode a prompt was shown and the operator declined. Codex CLI default mode displayed a prompt before its compact MCP dispatcher stopped on a tool-name error, before Binance validation.
 
 | Path | Confirmation | Evidence |
 |---|---|---|
-| Direct gateway call | none | `evidence/raw/0007-full-proof-probes.jsonl` |
-| Claude Code, default permission mode | none | `evidence/raw/0010-client-matrix.jsonl` |
-| Claude Code, manual permission mode | prompt shown; operator declined | `evidence/raw/0010-client-matrix.jsonl` |
-| Codex CLI, default permission mode | prompt shown; dispatcher stopped before Binance | `evidence/raw/0012-codex-cli-second-account.jsonl#141` |
+| Direct gateway call | none · harness | `evidence/raw/0007-full-proof-probes.jsonl` |
+| Claude Code, default permission mode | none · operator | `evidence/raw/0010-client-matrix.jsonl` |
+| Claude Code, manual permission mode | prompt shown; operator declined · operator | `evidence/raw/0010-client-matrix.jsonl` |
+| Codex CLI, default permission mode | prompt shown; dispatcher stopped before Binance · operator | `evidence/raw/0012-codex-cli-second-account.jsonl#141` |
 
 **DOCUMENTED:** Binance describes every trade or transfer as confirmed by the user first.
 
@@ -39,7 +94,7 @@ This is an observability gap, not a vulnerability. The endpoint an operator woul
 
 ### Enforcement behaved as documented
 
-**OBSERVED:** The selected grant exposed eleven write tools on both measured sub-accounts. Each product path reached a parameter-rejection response in both capability runs while every individual probe's complete before/after state proof remained identical.
+**OBSERVED · harness:** The selected grant exposed eleven trading write tools on both measured sub-accounts. Each product path reached a parameter-rejection response in both capability runs while every individual test's complete before/after state proof remained identical.
 
 | Capability | Advertised writes | Original result | Second-account result | Result |
 |---|---:|---|---|---|
@@ -50,29 +105,41 @@ This is an observability gap, not a vulnerability. The endpoint an operator woul
 | Convert | 0 | — | — | **DENIED** at discovery |
 | Transfer | 0 | — | — | **DENIED** at discovery |
 
-**OBSERVED:** The account-only grant advertised 60 read tools. The selected grant advertised 71 tools on both accounts, adding eleven write tools for Spot, USDⓈ-M Futures, and COIN-M Futures. The positive control `spot.getAccount` passed in the same session, client, address, and minute as each probe. The second-run Spot `-1100` response was a parameter-format rejection from the model's numeric proposal; the deterministic classifier records it as a known parameter rejection, and later proposals are normalized to fixed decimal strings.
+**OBSERVED · harness:** The account-only grant advertised 60 read tools. The selected grant advertised 71 tools on both accounts, adding eleven trading write tools for Spot, USDⓈ-M Futures, and COIN-M Futures. The connection check `spot.getAccount` passed in the same session, client, address, and minute as each test. The second-run Spot `-1100` response was a parameter-format rejection from the model's numeric proposal; the deterministic classifier records it as a known parameter rejection, and later proposals are normalized to fixed decimal strings.
 
-### Effective authority and least privilege
+### What the agent needs versus what it has
 
-**OBSERVED:** The same authenticated sub-account was measured under:
+**OBSERVED · harness:** The same authenticated sub-account was measured under:
 
 | Grant | Surface |
 |---|---:|
 | `mcp:account:read` | 60 tools |
 | `mcp:account:read mcp:futures:trade mcp:spot:trade` | 71 tools |
 
-**OBSERVED:** The checksummed strategy manifest needs Spot for `BTCUSDT` and `ETHUSDT`. The measured grant also verified both futures product families, producing measured excess of `coin_m_futures` and `usd_m_futures` and eight measured excess write tools. Narrowing requires disconnecting and re-authorizing.
+**OBSERVED · harness:** The checksummed strategy manifest needs Spot for `BTCUSDT` and `ETHUSDT`. The measured grant also verified both futures product families, producing measured excess of `coin_m_futures` and `usd_m_futures` and eight measured excess write tools. Narrowing requires disconnecting and re-authorizing.
 
-**OBSERVED:** The venue lists 1,362 spot instruments trading; the strategy declares 2. The venue inventory is a potential surface only and is never added to measured authority.
+**OBSERVED · harness:** The venue lists 1,362 spot instruments trading; the strategy declares 2. The venue inventory is a potential surface only and is never added to measured authority.
 
 ### Financial reach
 
-**OBSERVED:** The second Agentic sub-account was funded separately after its
+**OBSERVED · harness:** The second Agentic sub-account was funded separately after its
 capability measurement. The initial complete snapshot found `5.60000000 USDT`
-in its Spot account. After the approved bounded BTCUSDT buy/sell measurement,
-the final wallet reading explicitly quoted in USDT returned
-`5.58854065 USDT`; Binance retained `0.00000993 BTC` as below-minimum-lot
-dust.
+in its Spot account. The approved measurement bought `0.00007 BTC`, paid
+`0.00000007 BTC` commission, and sold `0.00006 BTC` because the LOT_SIZE step
+was `0.00001`. No Binance-retained dust is claimed; the remaining quantity
+reflected the sell sizing.
+
+**OBSERVED · harness:** Capital and confirmation are reported by provenance, never as a
+single cross-client summary:
+
+| Account / client / mode | Reachable capital | Before dispatch | Autonomous capital at risk |
+|---|---:|---|---:|
+| Account A / Claude Code / default | `0 USDT` | no confirmation observed · operator | `0 USDT` — account empty |
+| Account A / Claude Code / manual | `0 USDT` | prompt shown; operator declined · operator | `0 USDT` — account empty |
+| Account B / Codex CLI / default | `5.59 USDT` | prompt shown before dispatch · operator | `0 USDT` — client gate observed |
+| Account A / Direct gateway | — | no confirmation observed · harness | — |
+
+**OBSERVED · harness:** The dashboard displays the funded balance as `5.59 USDT`; the linked trace and evidence retain the exact `5.58854065 USDT` reading.
 
 ```text
 Capital visible                           5.58854065 USDT
@@ -82,30 +149,33 @@ Spot holdings                                    2
 Open futures positions                           0
 ```
 
-**OBSERVED:** The autonomous-capital figure is zero for this tested default
-because Codex CLI displayed a confirmation prompt before dispatch. The approved
-measurement used one bounded Spot buy and one Spot sell solely to create and
-close a small BTC holding; no Futures, transfer, or withdrawal was sent.
+**OBSERVED · operator:** For Account B through Codex CLI's default mode, autonomous
+capital at risk is zero because the client displayed a confirmation prompt
+before dispatch. The approved measurement used one bounded Spot buy and one
+Spot sell solely to create and close a small BTC holding; no Futures, transfer,
+or withdrawal was sent.
 
-**OBSERVED:** The live BTCUSDT bid book was walked for the post-buy holding.
+**OBSERVED · harness:** The live BTCUSDT bid book was walked for the post-buy holding.
 The measured immediate exit cost was `0.0054753406785 USDT`, including the
 estimated taker fee.
 
 ### Revocation
 
-**OBSERVED:** In one Codex CLI trial, five successive `spot.getAccount` reads
-were permitted. After the operator disconnected the agent, the next poll
-returned a transport-level `Auth required` failure. Revocation was therefore
+**OBSERVED · operator:** In one Codex CLI trial, five recorded `spot.getAccount` reads
+were permitted. After the operator disconnected the agent, the next recorded
+read returned a transport-level `Auth required` failure. Revocation was therefore
 observed at the Agentic session boundary, with `n=1`; no reconnect followed.
 
 The timestamped interval from the last permitted response to the first denied
 response was `20.680 seconds`. This is an observation window, not a claimed
 UI-click-to-denial latency, because the web UI click was not timestamped inside
-the poller. Evidence: [`0017-codex-cli-second-account-revocation-20260908.jsonl`](evidence/raw/0017-codex-cli-second-account-revocation-20260908.jsonl).
+the recording process. Evidence: [`0017-codex-cli-second-account-revocation-20260908.jsonl`](evidence/raw/0017-codex-cli-second-account-revocation-20260908.jsonl).
 
-### Zero-state proof
+### Every authority test left financial state unchanged
 
-**OBSERVED:** Every current probe captures fourteen state components before and after. Each snapshot is canonicalized, SHA-256 hashed, and linked into its append-only evidence chain.
+**OBSERVED · harness:** Every current authority test captures fourteen state components
+before and after. Each snapshot is canonicalized, SHA-256 hashed, and linked
+into its append-only evidence chain.
 
 ```text
 records replayed        329
@@ -116,7 +186,7 @@ probe pairs identical   True
 chain unbroken         True
 ```
 
-**OBSERVED:** Every completed before/after probe pair is identical and every evidence file replays with an unbroken record chain. The aggregate contains separate account sessions, and optional wallet metadata changed between two captures, so aggregate snapshot identity is not asserted as a single state. A probe with incomplete or changed before/after proof is discarded.
+**OBSERVED · harness:** Every completed before/after probe pair is identical and every evidence file replays with an unbroken record chain. The aggregate contains separate account sessions, and optional wallet metadata changed between two captures, so aggregate snapshot identity is not asserted as a single state. A probe with incomplete or changed before/after proof is discarded.
 
 ## What problem this solves
 
@@ -127,18 +197,12 @@ The result is an evidence-derived authority map, proof trace, least-privilege co
 ## What we built
 
 - Runtime MCP discovery with raw responses and granted-scope evidence.
-- A positive control and one budgeted, deliberately non-executing probe per measured capability.
+- A connection check and one budgeted, deliberately non-executing test per measured capability.
 - Complete before/after financial snapshots with canonical digests and append-only hash chains.
 - Deterministic authority classification, least-privilege diff, and layered financial reach.
 - Permission traces in which every classification line resolves to evidence.
 - A read-only dashboard rebuilt from the current classifier path.
-- A narrow Claude boundary: proposal planning and unmatched-response interpretation only; the model never receives a Binance client.
-
-## Model boundary
-
-**OBSERVED:** KEYRING uses Claude in exactly two places: proposing probe arguments against schemas discovered at runtime, and interpreting gateway responses that no deterministic matcher recognises. In both cases the model **proposes**; deterministic code decides. No classification, no published number, no financial figure and no verdict in this repository is produced by a model. Every probe proposal is validated against the symbol's live filters before it is sent, and rejected if it could execute. Probe records carry `planned_by` and a justification; model-assisted classifications record both the proposal and the classifier's decision, including disagreements.
-
-The historical evidence remains unchanged. Its older probe records are shown as planning fields not recorded, rather than falsely labelled as model output.
+- An agent boundary: the model proposes safe tests and interprets unmatched responses; deterministic code checks proposals and owns every result.
 
 ## Reproduce it
 
@@ -154,6 +218,15 @@ python -m keyring validate-config
 python -m keyring dashboard
 python -m pytest -q
 ```
+
+The retained evidence includes the recorded end-to-end agent run. It is the
+replayable artifact for the agent flow: runtime schema and live filters → model
+proposal → deterministic gate → safety-wrapped request → deterministic result.
+The commands above regenerate the analysis without reconnecting to Binance.
+
+There is no `agent-probe` command in this submission: invoking it would perform
+a new live measurement. The retained run is the evidence used for the agent
+flow, and the commands above replay its results without a live session.
 
 For an externally reachable demo, bind the read-only server explicitly:
 
@@ -171,8 +244,29 @@ Raw responses are in [`evidence/raw/`](evidence/raw/), with credential-shaped va
 
 ## Scope
 
-**OBSERVED:** The current evidence measures two authenticated Binance Agentic sub-accounts: the original through Claude Code and the second through Codex CLI, with a direct gateway baseline. Both use `mcp:account:read mcp:futures:trade mcp:spot:trade` for the selected capability run.
+**OBSERVED · harness:** The current evidence measures two authenticated Binance Agentic sub-accounts: the original through Claude Code and the second through Codex CLI, with a direct gateway baseline. Both use `mcp:account:read mcp:futures:trade mcp:spot:trade` for the selected capability run.
 
 **DOCUMENTED:** Binance security guidance says not to paste the MCP endpoint into an AI chat or open it directly in a browser. The build follows that guidance.
 
-**OBSERVED:** Rate limiting is enforced in code: a hard probe budget, per-minute pacing, `429` backoff, immediate `418` stop, `403` halt, and no aggressive retry after a server failure.
+**OBSERVED · harness:** Rate limiting is enforced in code: a hard probe budget, per-minute pacing, `429` backoff, immediate `418` stop, `403` halt, and no aggressive retry after a server failure.
+
+## Limits
+
+**NOT MEASURED:** Whether Binance inserts a server-side confirmation after a
+request passes validation and before execution. No valid order was allowed to
+reach that step.
+
+**NOT MEASURED:** Whether the measured account was margin-eligible. The
+consent-label divergence is not attributed to one cause.
+
+**INCONCLUSIVE:** A futures gross-notional ceiling is not asserted because
+leverage brackets, margin mode, and account limits were not resolved.
+
+**ASSUMED:** The cause of the different permission self-reports is not
+established by this run.
+
+**Egress metadata:** Probe records carry `egress_country: GB` as run metadata
+describing the measurement infrastructure. It is a static field written by
+the harness, not measured geolocation, and it does not describe the
+participant's location. Participant eligibility is established separately
+through the hackathon submission process.

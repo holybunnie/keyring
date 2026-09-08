@@ -1,39 +1,75 @@
 # Demo script
 
-This script narrates the measured KEYRING build. All values come from `evidence/raw/`.
+This script uses only retained evidence from `evidence/raw/`. It does not call
+Binance live and does not require reconnecting the measured accounts.
 
-## 0:00 — boundary
+## 0:00 — hook
 
-**OBSERVED:** “KEYRING's capability probes are deliberately non-executing and bounded by before/after state proof and rate limits. The separate financial-reach measurement used one explicitly approved Spot buy/sell pair.”
+**OBSERVED · harness:** “We connected an AI agent to two Binance accounts, then
+checked four different ways what each connection could do. The answers did not
+match.”
 
-**DOCUMENTED:** “Binance says not to paste the MCP endpoint into an AI chat or open it directly in a browser. The build follows that guidance.”
+## 0:15 — the headline panel
 
-## 0:20 — grant and discovery
+**OBSERVED · harness:** “On Account A, the permission screen said Spot & Margin
+trading and Futures. Binance's own permission check reported Spot and Futures
+trading disabled. The tools handed to the agent included eleven trading writes,
+and controlled tests confirmed Spot, USDⓈ-M Futures, and COIN-M Futures.”
 
-**OBSERVED:** “The same Agentic sub-account was measured under an Account grant and an Account plus Trade grant. The advertised surface changed from 60 read tools to 71 tools with eleven write tools.”
+**OBSERVED · harness:** “Account B had the same 71-tool, eleven-write measured
+surface and the same three confirmed trading families. Binance's own permission
+check reported Spot and Futures enabled. Same permission set. Same measured
+trading surface. Different self-report.”
 
-## 1:00 — authority trace
+## 1:05 — what the difference means
 
-**OBSERVED:** “Each authority row expands to its positive control, probe response, and unchanged state proof. Spot, USDⓈ-M Futures, and COIN-M Futures reached validation and were classified VERIFIED. Margin, Convert, and Transfer had no write tool advertised and were classified DENIED at discovery.”
+**OBSERVED · harness:** “This is not reported as a security hole. It is an audit
+answer that does not describe the connected session consistently. KEYRING keeps
+the observation and does not guess at its cause.”
 
-## 1:30 — client gate
+## 1:20 — confirmation behaviour
 
-**OBSERVED:** “The direct gateway baseline and Claude Code default mode reached Spot validation without a confirmation. Claude Code manual mode and Codex CLI default mode displayed a prompt.”
+**OBSERVED · operator:** “Claude Code's default path reached validation without a
+prompt. Its manual mode showed a prompt, and the operator declined. Codex CLI's
+default mode showed a prompt before its dispatcher stopped before Binance
+validation. Whether a prompt appeared before validation depended on client and
+mode. Whether Binance confirms after validation and before execution was not
+measured.”
 
-## 2:00 — least privilege
+## 1:40 — the agent, from the recorded run
 
-**OBSERVED:** “The manifest needs Spot for BTCUSDT and ETHUSDT. The measured grant also verified both futures families, exposing eight measured excess write tools. Narrowing requires disconnecting and re-authorizing.”
+**OBSERVED · harness:** Show the retained trace: runtime schema and live filters
+→ model proposal with justification → deterministic non-execution gate →
+safety-wrapped request → Binance response → unchanged state.
 
-## 2:30 — financial reach and proof
+“The agent designs the test from the runtime schema and live filters. The model
+proposes; deterministic code checks the proposal before the harness sends it,
+and deterministic code owns the result. The active record `0012#78` preserves a
+model suggestion of `VERIFIED` beside the deterministic `INCONCLUSIVE` result.”
 
-**OBSERVED:** “After capability measurement, the second sub-account was funded separately. The run began with 5.60 USDT in Spot; after the approved bounded BTCUSDT buy/sell measurement, the final quoted wallet total was 5.58854065 USDT. The live bid-book walk measured 0.0054753406785 USDT of exit cost. Codex CLI default mode displayed a confirmation prompt, so autonomous capital at risk is 0 for that tested default.”
+## 2:00 — what the authority was worth
 
-## 2:50 — revocation
+**OBSERVED · harness:** “On the funded Account B, the dashboard displays 5.59
+USDT reachable through confirmed trading paths. The exact retained balance is
+5.58854065 USDT. Codex CLI showed a prompt before dispatch, so autonomous
+capital at risk in that client context was 0.”
 
-**OBSERVED:** “In one Codex CLI trial, five `spot.getAccount` reads were permitted. After Disconnect Agents, the next poll returned transport-level `Auth required`. Revocation was observed at the session boundary, n=1. The interval from the last permitted response to the first denied response was 20.680 seconds; no click-to-denial latency is claimed.”
+## 2:18 — access removal
 
-**OBSERVED:** “Fourteen state components were captured before and after the capability probes. The aggregate evidence replays 329 records with 18 state digests, seven distinct captured states, identical before-and-after probe pairs, and an unbroken hash chain.”
+**OBSERVED · operator:** “In the recorded trial, five reads were permitted. After
+the operator disconnected the agent, the next recorded read returned `Auth
+required`. This is n=1. The 20.680-second figure is the interval between
+recorded observations, not UI-click-to-denial latency.”
 
-## Close
+## 2:33 — the proof
 
-**OBSERVED:** “KEYRING turns a consent grant into a replayable authority map: what the session advertised, what it reached, what the client asked the user to approve, and whether financial state changed.”
+**OBSERVED · harness:** Open an authority row and its evidence chips. “Every
+authority test has a complete before-and-after account-state check. The evidence
+log is replayed to rebuild the page; every figure links back to a record.”
+
+## 2:48 — close
+
+**OBSERVED · harness:** “KEYRING did not find hidden trading tools or weak
+enforcement. It found the same measured trading surface described differently
+by different first-party views. That is why it measures authority instead of
+inferring it.”

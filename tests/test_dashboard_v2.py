@@ -42,7 +42,14 @@ def test_every_capability_row_has_a_proof_chain(state):
         chain = state["traces"].get(name, {}).get("steps", [])
         assert chain, f"{name} has no proof chain"
         for step in chain:
-            assert step["label"] in {"OBSERVED", "DOCUMENTED", "ASSUMED", "INCONCLUSIVE"}
+            assert step["label"] in {
+                "OBSERVED",
+                "OBSERVED · harness",
+                "OBSERVED · operator",
+                "DOCUMENTED",
+                "ASSUMED",
+                "INCONCLUSIVE",
+            }
 
 
 def test_probed_capabilities_cite_an_evidence_record(state):
@@ -73,7 +80,9 @@ def test_revocation_summary_is_exposed(state):
 
 def test_report_has_plain_language_interactions_and_safe_evidence_index(state):
     page = render_html(state)
-    assert "What could this Binance connection actually do?" in page
+    assert "What can this agent actually do?" in page
+    assert "Same permission set. Same measured trading surface. Different self-report." in page
+    assert "OBSERVED · operator" in page
     assert 'id="capability-search"' in page
     assert 'data-filter="reached"' in page
     assert 'id="evidence-drawer"' in page
@@ -81,6 +90,22 @@ def test_report_has_plain_language_interactions_and_safe_evidence_index(state):
     assert "judg" not in page.lower()
     assert state["evidence_index"]
     assert all("raw_response" not in item for item in state["evidence_index"])
+
+
+def test_money_rows_keep_gate_and_capital_by_provenance(state):
+    rows = state["financial_reach"]["provenance_rows"]
+    by_key = {row["provenance_key"]: row for row in rows}
+    assert set(by_key) >= {
+        "account-a|claude-code|default",
+        "account-a|claude-code|manual",
+        "account-b|codex-cli|default",
+    }
+    funded = by_key["account-b|codex-cli|default"]
+    assert funded["capital_visible"]["value"] == "5.58854065"
+    assert funded["gate"] == "CLIENT-GATED"
+    assert funded["autonomous_capital_at_risk"]["value"] == "0"
+    assert "5.59 USDT" in render_html(state)
+    assert "5.58854065 USDT" not in render_html(state)
 
 
 def test_degraded_when_evidence_is_empty(tmp_path):

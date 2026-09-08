@@ -232,6 +232,8 @@ def run_probe(
             "discarded": discarded,
             "discard_reason": reason,
             "no_confirmation_prompt_observed": True,
+            # Static harness metadata describing the measurement infrastructure;
+            # this is not automatic geolocation and does not describe the user.
             "egress_country": "GB",
         },
     )

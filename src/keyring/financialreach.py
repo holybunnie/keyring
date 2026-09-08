@@ -29,6 +29,13 @@ from typing import Any
 from .authority import derive
 from .evidence import EvidenceLog
 from .models import EvidenceRecord, StateSnapshot
+from .provenance import (
+    Provenance,
+    is_operator_observation,
+    provenance_for,
+    qualified_label,
+    require_compatible_provenance,
+)
 
 # Which wallet a capability's capital sits in, as OBSERVED in the
 # wallet.queryUserWalletBalance payload.
@@ -48,8 +55,17 @@ def _decimal(value: Any) -> Decimal | None:
         return None
 
 
-def _layer(value: Any, label: str, reason: str, sources: list[str] | None = None) -> dict[str, Any]:
-    return {"value": value, "label": label, "reason": reason, "sources": sources or []}
+def _layer(
+    value: Any,
+    label: str,
+    reason: str,
+    sources: list[str] | None = None,
+    provenance_key: str | None = None,
+) -> dict[str, Any]:
+    layer = {"value": value, "label": label, "reason": reason, "sources": sources or []}
+    if provenance_key:
+        layer["provenance_key"] = provenance_key
+    return layer
 
 
 def _unavailable(component: Any) -> bool:
@@ -141,35 +157,300 @@ def latest_complete_snapshot(
     return best if best else (None, None)
 
 
-def _confirmation_gate_observed(evidence_dir: str | Path) -> dict[str, Any]:
-    """What the evidence says about a confirmation step, in the tested default."""
-    default_mode, strict_mode = None, None
+def _all_records(evidence_dir: str | Path) -> list[tuple[str, EvidenceRecord]]:
+    records: list[tuple[str, EvidenceRecord]] = []
     for path in sorted(Path(evidence_dir).glob("*.jsonl")):
-        for record in EvidenceLog(path).records(verify=True):
-            if record.record_type != "operator_observation":
-                continue
-            mode = str(record.metadata.get("permission_mode", ""))
-            if record.operation != "client_gate_observation":
-                continue
-            if "manual" in mode:
-                strict_mode = record
-            else:
-                default_mode = record
+        records.extend((path.name, record) for record in EvidenceLog(path).records(verify=True))
+    return records
+
+
+def _gate_observations(
+    records: list[tuple[str, EvidenceRecord]],
+) -> list[dict[str, Any]]:
+    """Return every gate observation with its account/client/mode context.
+
+    The direct gateway baseline is a harness-captured probe rather than an
+    operator observation.  It is included separately because it is a useful
+    comparison path, but it is never allowed to overwrite a client result.
+    """
+    observations: list[dict[str, Any]] = []
+    for filename, record in records:
+        is_client_observation = (
+            record.record_type == "operator_observation"
+            and record.operation == "client_gate_observation"
+        )
+        is_direct_gateway_baseline = (
+            record.record_type == "capability_probe"
+            and record.run_id.startswith("full-proof-spot")
+            and record.gate == "UNGATED"
+        )
+        if not (is_client_observation or is_direct_gateway_baseline):
+            continue
+        provenance = provenance_for(record, filename)
+        observations.append(
+            {
+                "provenance": provenance.as_dict(),
+                "provenance_key": provenance.key,
+                "account": provenance.account,
+                "client": provenance.client,
+                "permission_mode": provenance.permission_mode,
+                "gated": record.gate != "UNGATED",
+                "gate": _gate_value(record),
+                "outcome": record.outcome or "—",
+                "label": qualified_label(record),
+                "operator_observed": is_operator_observation(record),
+                "source": f"{filename}#{record.sequence}",
+            }
+        )
+    return observations
+
+
+def _confirmation_gate_observed(
+    evidence_dir: str | Path,
+    records: list[tuple[str, EvidenceRecord]] | None = None,
+) -> dict[str, Any]:
+    """Return all gate observations without choosing one by file order.
+
+    A scalar default-mode answer is only emitted when every observed default
+    has the same result.  Conflicting clients therefore remain a conflict.
+    """
+    observations = _gate_observations(records or _all_records(evidence_dir))
+    defaults = [item for item in observations if item["permission_mode"] == "default"]
+    manual = [item for item in observations if item["permission_mode"] == "manual"]
+    default_results = {item["gated"] for item in defaults}
+    manual_results = {item["gated"] for item in manual}
     return {
-        "default_mode_gated": bool(default_mode and default_mode.gate != "UNGATED"),
-        "default_mode_observed": default_mode is not None,
-        "strict_mode_gated": bool(strict_mode and strict_mode.gate != "UNGATED"),
-        "strict_mode_observed": strict_mode is not None,
+        "default_mode_gated": next(iter(default_results)) if len(default_results) == 1 else None,
+        "default_mode_observed": bool(defaults),
+        "strict_mode_gated": next(iter(manual_results)) if len(manual_results) == 1 else None,
+        "strict_mode_observed": bool(manual),
+        "default_mode_conflict": len(default_results) > 1,
+        "observations": observations,
     }
 
 
+def _gate_value(record: EvidenceRecord) -> str | None:
+    value = getattr(record.gate, "value", record.gate)
+    return str(value) if value is not None else None
+
+
+def _wallet_values(payload: Any) -> tuple[Decimal, dict[str, Decimal]] | None:
+    if not isinstance(payload, list):
+        return None
+    per_wallet: dict[str, Decimal] = {}
+    total = Decimal(0)
+    try:
+        for entry in payload:
+            name = str(entry["walletName"])
+            amount = _decimal(entry["balance"])
+            if amount is None:
+                return None
+            per_wallet[name] = amount
+            total += amount
+    except (KeyError, TypeError, ValueError):
+        return None
+    return total, per_wallet
+
+
+def _capital_candidates(
+    records: list[tuple[str, EvidenceRecord]],
+) -> list[dict[str, Any]]:
+    """Collect account-level capital facts without joining clients together."""
+    candidates: list[dict[str, Any]] = []
+    for filename, record in records:
+        values: tuple[Decimal, dict[str, Decimal]] | None = None
+        source_kind = ""
+        if (
+            record.record_type == "financial_balance_quote"
+            and str(record.metadata.get("quote_asset", "")).upper() == "USDT"
+        ):
+            values = _wallet_values(_record_payload(record))
+            source_kind = "quoted wallet reading"
+        elif record.state_after or record.state_before:
+            snapshot = record.state_after or record.state_before
+            if snapshot and snapshot.complete() and snapshot.components:
+                component = snapshot.components.get("wallet_balances")
+                values = _wallet_values(component)
+                source_kind = "complete account snapshot"
+        if values is None:
+            continue
+        total, per_wallet = values
+        provenance = provenance_for(record, filename)
+        candidates.append(
+            {
+                "account": provenance.account,
+                "provenance": provenance,
+                "total": total,
+                "per_wallet": per_wallet,
+                "source": f"{filename}#{record.sequence}",
+                "source_kind": source_kind,
+                "occurred_at": record.occurred_at,
+                "quoted": record.record_type == "financial_balance_quote",
+            }
+        )
+    return candidates
+
+
+def _latest_capital_by_account(
+    records: list[tuple[str, EvidenceRecord]],
+) -> dict[str, dict[str, Any]]:
+    """Prefer the latest quoted balance, otherwise the latest full snapshot."""
+    selected: dict[str, dict[str, Any]] = {}
+    for candidate in sorted(_capital_candidates(records), key=lambda item: item["occurred_at"]):
+        current = selected.get(candidate["account"])
+        if current is None or candidate["quoted"] > current["quoted"] or (
+            candidate["quoted"] == current["quoted"]
+            and candidate["occurred_at"] >= current["occurred_at"]
+        ):
+            selected[candidate["account"]] = candidate
+    return selected
+
+
+def _capital_layers_for_gate(
+    gate: dict[str, Any],
+    capital: dict[str, Any] | None,
+    verified: set[str],
+) -> dict[str, Any]:
+    """Build a row whose capital and gate provenance refer to one context."""
+    row_key = gate["provenance_key"]
+    if capital is None:
+        return {
+            "capital_visible": None,
+            "capital_reachable_by_trading": None,
+            "autonomous_capital_at_risk": None,
+            "capital_source": None,
+            "capital_provenance_key": None,
+        }
+
+    # Wallet balances are account-level facts.  They may be projected into a
+    # client/mode row only after the account has been checked to match.  The
+    # row key is the gate's full provenance key; the original source key stays
+    # visible for auditability.
+    require_compatible_provenance(
+        capital["provenance"],
+        Provenance(gate["account"], gate["client"], gate["permission_mode"]),
+        source_scope="account",
+    )
+    total = capital["total"]
+    reached = [
+        name
+        for name, amount in capital["per_wallet"].items()
+        if WALLET_CAPABILITY.get(name) in verified
+    ]
+    reachable = sum(
+        (capital["per_wallet"][name] for name in reached), Decimal(0)
+    )
+    if gate["gated"]:
+        autonomous_reason = (
+            "the client showed a confirmation prompt before dispatch; the account-level "
+            f"reachable balance is {reachable} USDT"
+        )
+        autonomous_value = Decimal(0)
+    else:
+        autonomous_reason = (
+            "no confirmation was observed before dispatch; the account-level reachable "
+            f"balance is {reachable} USDT"
+        )
+        autonomous_value = reachable
+    return {
+        "capital_visible": _layer(
+            str(total),
+            "OBSERVED",
+            f"{capital['source_kind']} for {capital['account']}; account-level fact",
+            [capital["source"]],
+            row_key,
+        ),
+        "capital_reachable_by_trading": _layer(
+            str(reachable),
+            "OBSERVED",
+            "account-level capital in wallets covered by the measured trading paths "
+            f"({', '.join(sorted(reached)) or 'none'})",
+            [capital["source"]],
+            row_key,
+        ),
+        "autonomous_capital_at_risk": _layer(
+            str(autonomous_value),
+            "OBSERVED",
+            autonomous_reason,
+            [gate["source"], capital["source"]],
+            row_key,
+        ),
+        "capital_source": {
+            "ref": capital["source"],
+            "kind": capital["source_kind"],
+            "account": capital["account"],
+            "provenance_key": row_key,
+            "source_provenance_key": capital["provenance"].key,
+            "scope": "account",
+            "gate_context": gate["provenance_key"],
+        },
+        "capital_provenance_key": row_key,
+    }
+
+
+def _provenance_rows(
+    records: list[tuple[str, EvidenceRecord]],
+    verified: set[str],
+) -> list[dict[str, Any]]:
+    """Return one financial/gate row per observed account/client/mode."""
+    gates = _gate_observations(records)
+    capital_by_account = _latest_capital_by_account(records)
+    rows: list[dict[str, Any]] = []
+    for gate in gates:
+        capital = None if gate["client"] == "Direct gateway" else capital_by_account.get(gate["account"])
+        layers = _capital_layers_for_gate(gate, capital, verified)
+        rows.append(
+            {
+                "provenance": gate["provenance"],
+                "provenance_key": gate["provenance_key"],
+                "account": gate["account"],
+                "client": gate["client"],
+                "permission_mode": gate["permission_mode"],
+                "gate": gate["gate"],
+                "gated": gate["gated"],
+                "gate_label": gate["label"],
+                "gate_source": gate["source"],
+                "gate_operator_observed": gate["operator_observed"],
+                **layers,
+            }
+        )
+    return rows
+
+
 def reach(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
+    records = _all_records(evidence_dir)
     snapshot, record = latest_complete_snapshot(evidence_dir)
     authority = derive(evidence_dir)
     verified = {
         name for name, row in authority["capabilities"].items() if row["classification"] == "VERIFIED"
     }
-    gate = _confirmation_gate_observed(evidence_dir)
+    gate = _confirmation_gate_observed(evidence_dir, records)
+    provenance_rows = _provenance_rows(records, verified)
+
+    # The scalar layers below are retained for the terminal/API compatibility
+    # of the original command, but they are selected only from one matching
+    # account/client/mode context.  The dashboard renders provenance_rows and
+    # never treats this compatibility view as an aggregate finding.
+    capital_by_account = _latest_capital_by_account(records)
+    capital_context = None
+    if record is not None:
+        capital_context = capital_by_account.get(provenance_for(record).account)
+    if capital_context is None and capital_by_account:
+        capital_context = max(
+            capital_by_account.values(), key=lambda item: item["occurred_at"]
+        )
+    selected_gate = None
+    if capital_context is not None:
+        selected_gate = next(
+            (
+                item
+                for item in gate["observations"]
+                if item["account"] == capital_context["account"]
+                and item["client"] == capital_context["provenance"].client
+                and item["permission_mode"] == capital_context["provenance"].permission_mode
+            ),
+            None,
+        )
 
     if snapshot is None:
         missing = _layer(None, "INCONCLUSIVE", "no complete state snapshot exists in the evidence log")
@@ -181,6 +462,8 @@ def reach(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
             "open_positions": missing,
             "instruments": missing,
             "futures_gross_notional_ceiling": missing,
+            "provenance_rows": provenance_rows,
+            "confirmation_gate": gate,
         }
 
     components = snapshot.components
@@ -249,24 +532,27 @@ def reach(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
     # attributed to a confirmation gate unless a gate was actually observed.
     if reachable_total is None:
         autonomous = _layer(None, "INCONCLUSIVE", "reachable capital is unresolved")
-    elif not gate["default_mode_observed"]:
+    elif selected_gate is None:
         autonomous = _layer(
-            None, "INCONCLUSIVE", "no client gate observation exists in the evidence log"
+            None,
+            "INCONCLUSIVE",
+            "no gate observation matches the account and client that supplied the capital figure",
         )
-    elif gate["default_mode_gated"]:
+    elif selected_gate["gated"]:
         autonomous = _layer(
             "0",
             "OBSERVED",
-            "a confirmation step was observed in the tested client default",
+            "a confirmation prompt was observed in the same account and client context as "
+            "the capital figure",
+            [selected_gate["source"]],
         )
     else:
         autonomous = _layer(
             str(reachable_total),
             "OBSERVED",
-            "no confirmation step was observed in the tested client default, so all "
-            "reachable capital could move without a human approving it. This figure is "
-            "currently zero because the account is empty, NOT because a gate exists.",
-            ["wallet_balances"],
+            "no confirmation prompt was observed in the same account and client context, "
+            "so all reachable capital could move without a human approving it",
+            [selected_gate["source"], "wallet_balances"],
         )
 
     # --- holdings and immediate exit cost ------------------------------------
@@ -369,7 +655,11 @@ def reach(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
             "leverage brackets, margin mode and account limits are not resolved; a gross "
             "notional ceiling is not derivable from this evidence and is not asserted",
         ),
-        "confirmation_gate": gate,
+        "confirmation_gate": {
+            **gate,
+            "selected_for_capital": selected_gate,
+        },
+        "provenance_rows": provenance_rows,
     }
 
 
@@ -381,7 +671,30 @@ def render(result: dict[str, Any]) -> str:
         out.append(f"      {layer['reason']}")
         return out
 
-    lines = ["FINANCIAL REACH, LAYERED", ""]
+    lines = ["FINANCIAL REACH, LAYERED", "", "PROVENANCE-KEYED CLIENT / CAPITAL VIEWS", ""]
+    for row in result.get("provenance_rows", []):
+        lines.append(
+            f"  {row['account']} / {row['client']} / {row['permission_mode']}"
+        )
+        lines.append(f"      gate                         {row['gate'] or '—'}   {row['gate_label']}")
+        capital = row.get("capital_visible")
+        reachable = row.get("capital_reachable_by_trading")
+        autonomous = row.get("autonomous_capital_at_risk")
+        if capital is None:
+            lines.append("      capital                     —")
+        else:
+            lines.append(f"      capital                     {capital['value']} USDT   {capital['label']}")
+            lines.append(
+                f"      reachable                  {reachable['value']} USDT   {reachable['label']}"
+            )
+            lines.append(
+                f"      autonomous                 {autonomous['value']} USDT   {autonomous['label']}"
+            )
+        lines.append(f"      gate evidence               {row['gate_source']}")
+        lines.append("")
+
+    lines.append("COMPATIBILITY VIEW (selected matching capital context)")
+    lines.append("")
     for name, key in [
         ("Capital visible", "capital_visible"),
         ("Capital reachable by trading", "capital_reachable_by_trading"),

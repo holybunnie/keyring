@@ -12,17 +12,21 @@ from __future__ import annotations
 import argparse
 import html
 import json
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .authority import derive
+from .authority import derive, is_write_tool_name
 from .config import load_probe_config
 from .evidence import EvidenceLog
-from .financialreach import reach
+from .financialreach import _confirmation_gate_observed, reach
 from .leastprivilege import diff
+from .mcp import _binance_error_code
+from .prober import classify_error_code
+from .provenance import account_for, is_operator_observation, qualified_label
 from .revocation import revocation_summary
 from .trace import trace
 
@@ -150,15 +154,18 @@ def _safety(evidence_dir: Path) -> dict[str, Any]:
 
 
 def _measured_contradictions(records: list[tuple[str, Any]]) -> list[dict[str, Any]]:
-    outcomes: dict[str, str] = {}
-    default_gate = None
-    for _, record in records:
+    outcomes: dict[str, dict[str, Any]] = {}
+    for filename, record in records:
         if record.run_id == "m0-5-permission-mutability":
-            outcomes["m0-5-permission-mutability"] = record.outcome or "—"
-        if record.operation == "client_gate_observation":
-            mode = str(record.metadata.get("permission_mode", ""))
-            if "manual" not in mode:
-                default_gate = record.gate
+            outcomes["m0-5-permission-mutability"] = {
+                "measured": record.outcome or "—",
+                "label": qualified_label(record),
+                "evidence": [f"{filename}#{record.sequence}"],
+            }
+
+    gate_observations = _confirmation_gate_observed(
+        "", records
+    )["observations"]
 
     rows = []
     for entry in CONTRADICTIONS:
@@ -166,18 +173,29 @@ def _measured_contradictions(records: list[tuple[str, Any]]) -> list[dict[str, A
         if key == "m0-5-permission-mutability":
             if key not in outcomes:
                 continue
-            measured = outcomes[key]
+            result = outcomes[key]
+            measured = result["measured"]
+            label = result["label"]
+            evidence = result["evidence"]
         elif key == "client_gate_observation":
-            if default_gate is None:
+            if not gate_observations:
                 continue
-            measured = (
-                "No confirmation in the tested default"
-                if str(default_gate).endswith("UNGATED")
-                else "Confirmation shown in the tested default"
-            )
+            measured_parts = []
+            evidence = []
+            labels = []
+            for observation in gate_observations:
+                result = "confirmation shown" if observation["gated"] else "no confirmation"
+                measured_parts.append(
+                    f"{observation['client']} / {observation['permission_mode']}: {result} "
+                    f"({observation['label']})"
+                )
+                evidence.append(observation["source"])
+                labels.append(observation["label"])
+            measured = "; ".join(measured_parts)
+            label = "OBSERVED · operator" if any("operator" in item for item in labels) else "OBSERVED · harness"
         else:
             continue
-        rows.append({**entry, "measured": measured, "label": "OBSERVED"})
+        rows.append({**entry, "measured": measured, "label": label, "evidence": evidence})
     return rows
 
 
@@ -225,6 +243,136 @@ def _headline_facts(records: list[tuple[str, Any]], financial: dict[str, Any]) -
     }
 
 
+def _tools_from_record(record: Any) -> list[dict[str, Any]]:
+    payload = _decode_record_response(record)
+    if not isinstance(payload, dict) or not isinstance(payload.get("tools"), list):
+        return []
+    return [tool for tool in payload["tools"] if isinstance(tool, dict)]
+
+
+def _account_headline_facts(
+    records: list[tuple[str, Any]],
+) -> list[dict[str, Any]]:
+    """Build the hero panel from account-scoped evidence only."""
+    by_account: dict[str, list[tuple[str, Any]]] = {}
+    for filename, record in records:
+        by_account.setdefault(account_for(record, filename), []).append((filename, record))
+
+    rows: list[dict[str, Any]] = []
+    for account in sorted(name for name in by_account if name in {"Account A", "Account B"}):
+        account_records = by_account[account]
+        scopes: dict[str, list[str]] = {}
+        tools: dict[str, dict[str, Any]] = {}
+        for filename, record in account_records:
+            if not record.granted_scope:
+                continue
+            is_discovery = (
+                record.operation == "initialize"
+                or (record.operation or "").startswith("tools/list")
+                or record.record_type in {"mcp_discovery", "tools_list"}
+            )
+            if not is_discovery:
+                continue
+            ref = f"{filename}#{record.sequence}"
+            scopes.setdefault(record.granted_scope, []).append(ref)
+            for tool in _tools_from_record(record):
+                name = str(tool.get("name", ""))
+                if name:
+                    tools[name] = {"name": name, "ref": ref}
+
+        selected_scope = max(
+            scopes,
+            key=lambda scope: (scope != "mcp:account:read", len(scope.split())),
+            default=None,
+        )
+        selected_refs = scopes.get(selected_scope or "", [])
+        selected_tools = [item for item in tools.values() if selected_scope]
+        write_tools = [item for item in selected_tools if is_write_tool_name(item["name"])]
+        consent = []
+        if selected_scope and "mcp:spot:trade" in selected_scope:
+            consent.append("Spot & Margin trading")
+        if selected_scope and "mcp:futures:trade" in selected_scope:
+            consent.append("Futures trading")
+
+        permission_records = [
+            (filename, record)
+            for filename, record in account_records
+            if record.operation == "wallet.getApiKeyPermission"
+            or record.record_type == "permission_report"
+        ]
+        permission = None
+        permission_ref = None
+        if permission_records:
+            permission_ref, permission_record = max(
+                permission_records, key=lambda item: item[1].occurred_at
+            )
+            permission_ref = f"{permission_ref}#{permission_record.sequence}"
+            permission = _decode_record_response(permission_record)
+        permission_flags = None
+        if isinstance(permission, dict):
+            permission_flags = {
+                "spot": bool(permission.get("enableSpotAndMarginTrading")),
+                "futures": bool(permission.get("enableFutures")),
+            }
+            permission_text = (
+                f"Spot {'✓' if permission.get('enableSpotAndMarginTrading') else '✕'} · "
+                f"Futures {'✓' if permission.get('enableFutures') else '✕'}"
+            )
+        else:
+            permission_text = "Not recorded"
+
+        confirmed: dict[str, list[str]] = {}
+        for filename, record in account_records:
+            if record.record_type != "capability_probe" or not record.capability:
+                continue
+            if record.control_passed is not True or record.state_unchanged is not True:
+                continue
+            error_code = _binance_error_code(record.raw_response or "") or record.error_code
+            if classify_error_code(error_code) != "VERIFIED":
+                continue
+            confirmed.setdefault(record.capability, []).append(
+                f"{filename}#{record.sequence}"
+            )
+        tested = [
+            (name, confirmed.get(name, []))
+            for name in ("spot", "usd_m_futures", "coin_m_futures")
+            if confirmed.get(name)
+        ]
+        test_text = " · ".join(
+            f"{CAPABILITY_LABELS[name].replace(' trading', '').replace(' Futures', '')} ✓"
+            for name, _ in tested
+        ) or "No confirmed trading path"
+        test_refs = [ref for _, refs in tested for ref in refs]
+
+        rows.append(
+            {
+                "account": account,
+                "permission_screen": {
+                    "value": " · ".join(consent) or "Not recorded",
+                    "sources": selected_refs[:1],
+                },
+                "permission_check": {
+                    "value": permission_text,
+                    "technical": "wallet.getApiKeyPermission",
+                    "sources": [permission_ref] if permission_ref else [],
+                },
+                "tools": {
+                    "value": f"{len(selected_tools)} tools · {len(write_tools)} trading writes",
+                    "sources": selected_refs,
+                },
+                "controlled_tests": {
+                    "value": test_text,
+                    "sources": test_refs,
+                },
+                "permission_flags": permission_flags,
+                "tool_count": len(selected_tools),
+                "write_count": len(write_tools),
+                "tested_capabilities": [name for name, _ in tested],
+            }
+        )
+    return rows
+
+
 def _label_value(value: Any) -> str:
     return str(getattr(value, "value", value))
 
@@ -247,7 +395,8 @@ def _record_summary(filename: str, record: Any) -> dict[str, Any]:
         ),
         "operation": record.operation or "—",
         "capability": CAPABILITY_LABELS.get(record.capability, record.capability or "—"),
-        "label": _label_value(record.label),
+        "label": qualified_label(record),
+        "capture_origin": "operator" if is_operator_observation(record) else "harness",
         "outcome": outcome_labels.get(record.outcome, record.outcome or "—"),
         "occurred_at": record.occurred_at.isoformat(),
         "error_code": record.error_code or "—",
@@ -303,6 +452,7 @@ def dashboard_state(
         "safety": _safety(evidence_dir),
         "authority": authority["capabilities"],
         "contradictions": _measured_contradictions(records),
+        "account_headline": _account_headline_facts(records),
         "evidence_files": sorted({filename for filename, _ in records}),
         "evidence_index": evidence_index,
     }
@@ -355,21 +505,25 @@ button,input{font:inherit}button{cursor:pointer}a{color:inherit}
 .brand{display:flex;align-items:center;gap:11px;font-weight:800;letter-spacing:-.02em}.brand-mark{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,#7469ec,#3e9fba);color:#fff;font-size:17px}.brand small{display:block;color:#8992a5;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase}
 .nav{display:flex;align-items:center;gap:5px;flex-wrap:wrap}.nav a,.nav button{border:0;background:transparent;color:#667085;text-decoration:none;padding:8px 10px;border-radius:8px;font-size:13px}.nav a:hover,.nav button:hover{background:#e9edf5;color:var(--ink)}
 .hero{position:relative;overflow:hidden;border-radius:24px;background:linear-gradient(120deg,var(--navy),var(--navy2) 70%,#314773);color:#fff;padding:46px 46px 42px;box-shadow:var(--shadow)}.hero:after{content:"";position:absolute;width:380px;height:380px;border:1px solid rgba(255,255,255,.11);border-radius:50%;right:-110px;top:-160px;box-shadow:0 0 0 35px rgba(255,255,255,.025),0 0 0 70px rgba(255,255,255,.018)}.hero>*{position:relative;z-index:1}.eyebrow,.section-kicker{font-size:11px;text-transform:uppercase;letter-spacing:.14em;font-weight:800;color:#aeb9d2}.hero h1{font-size:clamp(30px,4.5vw,54px);line-height:1.08;letter-spacing:-.055em;max-width:760px;margin:12px 0 16px}.hero .lead{max-width:720px;color:#c9d2e4;font-size:17px;margin:0}.hero-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(260px,.65fr);gap:30px;margin-top:34px}.answer{border:1px solid rgba(255,255,255,.17);background:rgba(255,255,255,.08);border-radius:16px;padding:20px 22px}.answer-label{color:#aeb9d2;font-size:12px;text-transform:uppercase;letter-spacing:.11em;font-weight:800}.answer h2{font-size:22px;line-height:1.25;letter-spacing:-.025em;margin:8px 0}.answer p{color:#d5dced;margin:0}.hero-facts{display:grid;gap:12px;align-content:center}.hero-fact{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.13)}.hero-fact:last-child{border-bottom:0}.hero-fact span{color:#aeb9d2}.hero-fact strong{text-align:right}.hero-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:25px}.button{border:1px solid #d8ddea;background:#fff;color:var(--ink);border-radius:9px;padding:9px 13px;font-weight:700;font-size:13px;text-decoration:none}.button.secondary{background:transparent;color:#fff;border-color:rgba(255,255,255,.27)}.button:hover{transform:translateY(-1px);box-shadow:0 5px 12px rgba(0,0,0,.12)}
+.hero-panel{margin-top:30px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.07);border-radius:17px;padding:20px}.hero-panel h2{font-size:24px;letter-spacing:-.035em;margin:0 0 4px}.hero-panel-intro{color:#c9d2e4;margin:0 0 15px}.account-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.account-panel{border:1px solid rgba(255,255,255,.16);border-radius:12px;overflow:hidden;background:rgba(255,255,255,.055)}.account-panel h3{font-size:15px;margin:0;padding:13px 15px;background:rgba(255,255,255,.08)}.account-row{display:grid;grid-template-columns:minmax(145px,.8fr) minmax(0,1.2fr);gap:14px;padding:11px 15px;border-top:1px solid rgba(255,255,255,.11)}.account-row span{color:#aeb9d2;font-size:12px}.account-row strong{font-size:13px;text-align:right;overflow-wrap:anywhere}.account-row strong a{color:#fff;text-decoration:underline;text-decoration-color:rgba(255,255,255,.45);text-underline-offset:3px}.account-technical{display:block;color:#aeb9d2;font:10px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:3px}.hero-panel-foot{color:#aeb9d2;font-size:11px;margin:14px 0 0}.hero-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(260px,.65fr);gap:30px;margin-top:34px}.answer{border:1px solid rgba(255,255,255,.17);background:rgba(255,255,255,.08);border-radius:16px;padding:20px 22px}.answer-label{color:#aeb9d2;font-size:12px;text-transform:uppercase;letter-spacing:.11em;font-weight:800}.answer h2{font-size:22px;line-height:1.25;letter-spacing:-.025em;margin:8px 0}.answer p{color:#d5dced;margin:0}.hero-facts{display:grid;gap:12px;align-content:center}.hero-fact{display:flex;justify-content:space-between;gap:16px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.13)}.hero-fact:last-child{border-bottom:0}.hero-fact span{color:#aeb9d2}.hero-fact strong{text-align:right}.hero-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:25px}.button{border:1px solid #d8ddea;background:#fff;color:var(--ink);border-radius:9px;padding:9px 13px;font-weight:700;font-size:13px;text-decoration:none}.button.secondary{background:transparent;color:#fff;border-color:rgba(255,255,255,.27)}.button:hover{transform:translateY(-1px);box-shadow:0 5px 12px rgba(0,0,0,.12)}
 .kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin:18px 0 32px}.kpi{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:17px 18px;box-shadow:0 4px 16px rgba(20,32,58,.035)}.kpi .number{display:block;font-size:28px;line-height:1.1;font-weight:800;letter-spacing:-.05em}.kpi .label{display:block;color:var(--muted);font-size:12px;margin-top:6px}.kpi.good .number{color:var(--teal)}.kpi.purple .number{color:var(--purple)}.kpi.amber .number{color:var(--amber)}
 .section{margin-top:42px;scroll-margin-top:24px}.section-head{display:flex;justify-content:space-between;align-items:end;gap:20px;margin-bottom:16px}.section-head h2{font-size:27px;line-height:1.15;letter-spacing:-.04em;margin:5px 0 0}.section-head p{color:var(--muted);margin:6px 0 0;max-width:720px}.section-kicker{color:#7a8498}.section-intro{color:var(--muted);max-width:790px;margin:-4px 0 18px}
 .signals{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.signal{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:20px;box-shadow:0 4px 16px rgba(20,32,58,.035);border-top:4px solid var(--purple)}.signal.good{border-top-color:var(--teal)}.signal.warn{border-top-color:var(--amber)}.signal h3{font-size:17px;line-height:1.25;letter-spacing:-.02em;margin:8px 0}.signal p{color:var(--muted);margin:0}.signal .signal-label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:800;color:var(--purple)}.signal.good .signal-label{color:var(--teal)}.signal.warn .signal-label{color:var(--amber)}
 .timeline{display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:22px 12px;box-shadow:0 4px 16px rgba(20,32,58,.035)}.timeline-step{position:relative;padding:0 20px}.timeline-step:not(:last-child):after{content:"";position:absolute;top:15px;right:-1px;width:calc(100% - 38px);height:1px;background:#d7ddea;transform:translateX(50%)}.timeline-number{position:relative;z-index:1;display:grid;place-items:center;width:31px;height:31px;border-radius:50%;background:var(--purple-light);color:var(--purple);font-weight:800;margin-bottom:12px}.timeline-step h3{font-size:15px;margin:0 0 4px}.timeline-step p{color:var(--muted);font-size:13px;margin:0}
 .toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:15px 0}.search{position:relative;flex:1;min-width:230px}.search input{width:100%;border:1px solid var(--line);border-radius:9px;background:var(--paper);padding:10px 13px 10px 34px;color:var(--ink);outline:none}.search input:focus{border-color:var(--purple);box-shadow:0 0 0 3px var(--purple-light)}.search:before{content:"⌕";position:absolute;left:12px;top:7px;color:#8992a5;font-size:19px}.filters{display:flex;gap:6px;flex-wrap:wrap}.filter{border:1px solid var(--line);background:var(--paper);color:var(--muted);border-radius:8px;padding:8px 11px;font-size:12px;font-weight:700}.filter.active,.filter:hover{background:var(--purple-light);border-color:#d8d3ff;color:var(--purple)}
-.access-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:15px}.access-card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 4px 16px rgba(20,32,58,.035);transition:box-shadow .2s,transform .2s}.access-card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}.access-card.hidden{display:none}.access-top{display:flex;justify-content:space-between;align-items:start;gap:10px}.access-card h3{font-size:20px;letter-spacing:-.03em;margin:5px 0}.access-card .description{color:var(--muted);margin:0 0 16px}.status{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:800;white-space:nowrap}.status:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.status.reached{color:var(--teal);background:var(--teal-light)}.status.not-offered{color:var(--amber);background:var(--amber-light)}.status.unclear{color:var(--red);background:var(--red-light)}.access-kicker{font-size:11px;color:#8992a5;text-transform:uppercase;letter-spacing:.1em;font-weight:800}.access-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:15px 0}.access-stat{background:var(--wash);border-radius:9px;padding:10px}.access-stat span{display:block;color:var(--muted);font-size:11px}.access-stat strong{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.tool-list{display:flex;gap:5px;flex-wrap:wrap;margin:10px 0 15px}.tool-name{background:#f0f2f7;border-radius:6px;color:#596579;font:11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;padding:4px 6px}.proof-details{border-top:1px solid var(--line);padding-top:12px}.proof-details summary{cursor:pointer;color:var(--purple);font-size:13px;font-weight:800;list-style:none}.proof-details summary::-webkit-details-marker{display:none}.proof-details summary:before{content:"＋";display:inline-block;margin-right:5px}.proof-details[open] summary:before{content:"−"}.proof-list{margin-top:13px;display:grid;gap:9px}.proof-row{display:grid;grid-template-columns:145px minmax(0,1fr);gap:8px;padding:10px 0;border-bottom:1px dashed #e3e7ef}.proof-row:last-child{border-bottom:0}.proof-name{color:#68758a;font-size:12px;font-weight:800}.proof-value{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;color:#354154;font-size:13px}.proof-evidence{grid-column:2;display:flex;gap:5px;flex-wrap:wrap}.evidence-ref{border:1px solid #d7d3ff;background:var(--purple-light);color:#594bc2;border-radius:6px;padding:4px 7px;font-size:11px;font-weight:700}.evidence-ref:hover{background:#dedaff}.no-results{display:none;background:var(--paper);border:1px dashed #cfd6e3;color:var(--muted);border-radius:12px;padding:22px;text-align:center}.no-results.show{display:block}
+.access-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:15px}.access-card{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 4px 16px rgba(20,32,58,.035);transition:box-shadow .2s,transform .2s}.access-card:hover{transform:translateY(-2px);box-shadow:var(--shadow)}.access-card.hidden{display:none}.access-top{display:flex;justify-content:space-between;align-items:start;gap:10px}.access-card h3{font-size:20px;letter-spacing:-.03em;margin:5px 0}.access-card .description{color:var(--muted);margin:0 0 16px}.status{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:800;white-space:nowrap}.status:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}.status.reached{color:var(--teal);background:var(--teal-light)}.status.not-offered{color:var(--amber);background:var(--amber-light)}.status.unclear{color:var(--red);background:var(--red-light)}.access-kicker{font-size:11px;color:#8992a5;text-transform:uppercase;letter-spacing:.1em;font-weight:800}.access-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:15px 0}.access-stat{background:var(--wash);border-radius:9px;padding:10px}.access-stat span{display:block;color:var(--muted);font-size:11px}.access-stat strong{display:block;margin-top:3px;font-size:13px;overflow-wrap:anywhere}.tool-list{display:flex;gap:5px;flex-wrap:wrap;margin:10px 0 15px}.tool-name{background:#f0f2f7;border-radius:6px;color:#596579;font:11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;padding:4px 6px}.proof-details{border-top:1px solid var(--line);padding-top:12px}.proof-details summary{cursor:pointer;color:var(--purple);font-size:13px;font-weight:800;list-style:none}.proof-details summary::-webkit-details-marker{display:none}.proof-details summary:before{content:"＋";display:inline-block;margin-right:5px}.proof-details[open] summary:before{content:"−"}.proof-list{margin-top:13px;display:grid;gap:9px}.proof-row{display:grid;grid-template-columns:145px minmax(0,1fr);gap:8px;padding:10px 0;border-bottom:1px dashed #e3e7ef}.proof-row:last-child{border-bottom:0}.proof-name{color:#68758a;font-size:12px;font-weight:800}.proof-label{display:block;color:#8992a5;font-size:9px;font-weight:700;letter-spacing:.03em;margin-top:2px}.proof-value{min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;color:#354154;font-size:13px}.proof-evidence{grid-column:2;display:flex;gap:5px;flex-wrap:wrap}.evidence-ref{border:1px solid #d7d3ff;background:var(--purple-light);color:#594bc2;border-radius:6px;padding:4px 7px;font-size:11px;font-weight:700}.evidence-ref:hover{background:#dedaff}.no-results{display:none;background:var(--paper);border:1px dashed #cfd6e3;color:var(--muted);border-radius:12px;padding:22px;text-align:center}.no-results.show{display:block}
 .compare-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:15px}.compare-card,.money-card,.integrity-card,.source-card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:21px;box-shadow:0 4px 16px rgba(20,32,58,.035)}.compare-card h3,.money-card h3{font-size:16px;margin:0 0 12px}.compare-card.needed{border-top:4px solid var(--teal)}.compare-card.extra{border-top:4px solid var(--amber)}.compare-card p{color:var(--muted);margin:6px 0}.plain-list{padding:0;margin:8px 0 0;list-style:none}.plain-list li{padding:7px 0;border-bottom:1px solid var(--line)}.plain-list li:last-child{border-bottom:0}.plain-list li:before{content:"✓";color:var(--teal);font-weight:900;margin-right:8px}.extra .plain-list li:before{content:"+";color:var(--amber)}.callout{margin-top:14px;background:#f8f7ff;border:1px solid #e3e0ff;border-radius:12px;padding:15px 17px;color:#4c4b6a}.callout strong{color:var(--purple)}
+.provenance-money{background:var(--paper);border:1px solid var(--line);border-radius:15px;overflow:hidden}.provenance-money-row{display:grid;grid-template-columns:1.2fr 1fr 1.15fr 1fr auto;gap:14px;align-items:center;padding:14px 17px;border-bottom:1px solid var(--line)}.provenance-money-row:last-child{border-bottom:0}.provenance-money-row>div:not(.provenance-money-source){display:flex;flex-direction:column;gap:2px}.provenance-money-row span,.provenance-money-row small{color:var(--muted);font-size:11px}.provenance-money-row strong{font-size:13px}.provenance-money-row>div:first-child span{font-size:12px}.provenance-money-source{display:flex;justify-content:flex-end}.provenance-money-source .evidence-ref{white-space:nowrap}
 .money-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:11px}.money-card{padding:17px}.money-card .money-label{color:var(--muted);font-size:12px;min-height:38px}.money-card .money-value{font-size:21px;font-weight:800;letter-spacing:-.035em;margin-top:8px;overflow-wrap:anywhere}.money-card .money-note{color:#8992a5;font-size:11px;margin-top:5px}.money-card.measured{border-top:3px solid var(--teal)}.money-card.cost{border-top:3px solid var(--amber)}.money-note-block{background:var(--teal-light);border:1px solid #c9ece4;border-radius:12px;padding:14px 16px;color:#23685f;margin-top:14px}.money-note-block strong{color:#075f54}
+.subsection-title{font-size:18px;letter-spacing:-.025em;margin:28px 0 11px}
 .integrity-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:11px}.integrity-card{text-align:center;padding:17px 10px}.integrity-card .big{display:block;color:var(--purple);font-size:23px;font-weight:800;letter-spacing:-.04em}.integrity-card .small{display:block;color:var(--muted);font-size:11px;margin-top:4px}.integrity-card.pass .big{color:var(--teal)}.integrity-card.warn .big{color:var(--amber)}.explain{color:var(--muted);max-width:820px;margin:13px 0 0}.source-card{margin-top:14px}.source-card h3{font-size:15px;margin:0 0 8px}.file-pills{display:flex;gap:6px;flex-wrap:wrap}.file-pill{background:var(--wash);border:1px solid var(--line);border-radius:7px;color:#596579;font:11px/1.3 ui-monospace,SFMono-Regular,Menlo,monospace;padding:6px 8px}
 .notes-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.note-card{background:var(--paper);border:1px solid var(--line);border-radius:15px;padding:19px}.note-card h3{font-size:16px;margin:0 0 8px}.note-card p{color:var(--muted);margin:0}.note-card .note-tag{color:var(--purple);font-size:11px;text-transform:uppercase;letter-spacing:.1em;font-weight:800}.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.legend span{font-size:11px;color:var(--muted);background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:5px 8px}.legend b{color:var(--ink)}
+.note-card .note-evidence{display:flex;gap:5px;flex-wrap:wrap;margin-top:13px}
 .muted{color:var(--muted)}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 .footer{display:flex;justify-content:space-between;gap:16px;align-items:center;border-top:1px solid var(--line);margin-top:48px;padding-top:20px;color:#8992a5;font-size:12px}.footer a{color:var(--purple);font-weight:700;text-decoration:none}
 .drawer-backdrop{position:fixed;inset:0;background:rgba(11,19,38,.45);z-index:10}.drawer{position:fixed;z-index:11;right:0;top:0;height:100%;width:min(470px,100%);background:var(--paper);box-shadow:-15px 0 45px rgba(10,20,40,.2);padding:28px;overflow:auto}.drawer[hidden],.drawer-backdrop[hidden]{display:none}.drawer-header{display:flex;justify-content:space-between;align-items:start;gap:15px;border-bottom:1px solid var(--line);padding-bottom:15px}.drawer h2{font-size:22px;letter-spacing:-.035em;margin:0}.close{border:0;background:var(--wash);color:var(--muted);border-radius:8px;width:32px;height:32px;font-size:20px}.drawer-ref{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--purple);overflow-wrap:anywhere;margin:17px 0}.drawer dl{display:grid;grid-template-columns:115px minmax(0,1fr);gap:10px 14px}.drawer dt{color:#8992a5;font-size:12px}.drawer dd{margin:0;color:#354154;overflow-wrap:anywhere}.drawer-note{background:var(--teal-light);color:#23685f;border-radius:9px;padding:11px 12px;margin-top:19px;font-size:13px}
-@media(max-width:900px){.hero-grid,.signals,.compare-grid,.notes-grid{grid-template-columns:1fr}.kpi-grid{grid-template-columns:repeat(2,1fr)}.money-grid{grid-template-columns:repeat(3,1fr)}.integrity-grid{grid-template-columns:repeat(3,1fr)}.timeline{grid-template-columns:repeat(2,1fr);gap:22px}.timeline-step:not(:last-child):after{display:none}.timeline-step{padding:0 15px}.access-grid{grid-template-columns:1fr}}
-@media(max-width:580px){.shell{padding:0 14px 40px}.topbar{align-items:start;flex-direction:column}.hero{padding:30px 22px;border-radius:18px}.hero h1{font-size:36px}.kpi-grid,.money-grid,.integrity-grid{grid-template-columns:repeat(2,1fr)}.section-head{display:block}.access-stats{grid-template-columns:1fr}.proof-row{grid-template-columns:1fr}.proof-evidence{grid-column:1}.timeline{grid-template-columns:1fr}.footer{display:block}.footer a{display:inline-block;margin-top:8px}}
+@media(max-width:900px){.hero-grid,.signals,.compare-grid,.notes-grid,.account-panels{grid-template-columns:1fr}.kpi-grid{grid-template-columns:repeat(2,1fr)}.money-grid{grid-template-columns:repeat(3,1fr)}.integrity-grid{grid-template-columns:repeat(3,1fr)}.timeline{grid-template-columns:repeat(2,1fr);gap:22px}.timeline-step:not(:last-child):after{display:none}.timeline-step{padding:0 15px}.access-grid{grid-template-columns:1fr}.provenance-money-row{grid-template-columns:repeat(2,1fr)}.provenance-money-source{grid-column:1/-1;justify-content:flex-start}}
+@media(max-width:580px){.shell{padding:0 14px 40px}.topbar{align-items:start;flex-direction:column}.hero{padding:30px 22px;border-radius:18px}.hero h1{font-size:36px}.kpi-grid,.money-grid,.integrity-grid{grid-template-columns:repeat(2,1fr)}.section-head{display:block}.access-stats{grid-template-columns:1fr}.proof-row{grid-template-columns:1fr}.proof-evidence{grid-column:1}.timeline{grid-template-columns:1fr}.footer{display:block}.footer a{display:inline-block;margin-top:8px}.account-row{grid-template-columns:1fr}.account-row strong{text-align:left}.provenance-money-row{grid-template-columns:1fr}}
 """
 
 
@@ -391,12 +545,15 @@ def _status_info(classification: str) -> tuple[str, str]:
 
 
 def _label_text(label: Any) -> str:
+    text = _label_value(label)
+    if text.startswith("OBSERVED · "):
+        return "Measured · " + text.removeprefix("OBSERVED · ").title()
     return {
         "OBSERVED": "Measured",
         "DOCUMENTED": "Published information",
         "ASSUMED": "Assumption",
         "INCONCLUSIVE": "Not resolved",
-    }.get(_label_value(label), _label_value(label).title())
+    }.get(text, text.title())
 
 
 def _scope_text(scope: str | None) -> str:
@@ -425,7 +582,14 @@ def _value_with_unit(key: str, layer: dict[str, Any]) -> str:
         return "—"
     if key == "open_positions" and isinstance(value, dict):
         return str(sum(int(item or 0) for item in value.values()))
-    if key in {"capital_visible", "capital_reachable_by_trading", "autonomous_capital_at_risk", "immediate_exit_cost"}:
+    if key in {"capital_visible", "capital_reachable_by_trading", "autonomous_capital_at_risk"}:
+        try:
+            amount = Decimal(str(value))
+            shown = "0" if amount == 0 else format(amount.quantize(Decimal("0.01")), "f")
+        except (InvalidOperation, TypeError, ValueError):
+            shown = str(value)
+        return f"{shown} USDT"
+    if key == "immediate_exit_cost":
         return f"{value} USDT"
     return str(value)
 
@@ -434,6 +598,94 @@ def _plain_list(items: list[str], empty: str = "None recorded") -> str:
     if not items:
         return f'<p class="muted">{_esc(empty)}</p>'
     return '<ul class="plain-list">' + "".join(f"<li>{_esc(item)}</li>" for item in items) + "</ul>"
+
+
+def _account_headline_html(rows: list[dict[str, Any]]) -> str:
+    def cell(label: str, fact: dict[str, Any]) -> str:
+        technical = (
+            f'<span class="account-technical">{_esc(fact["technical"])}</span>'
+            if fact.get("technical")
+            else ""
+        )
+        refs = _refs_html(fact.get("sources", []))
+        return (
+            f'<div class="account-row"><span>{_esc(label)}</span><strong>{_esc(fact.get("value", "—"))}'
+            f'{technical}<small>{refs}</small></strong></div>'
+        )
+
+    cards = []
+    for row in rows:
+        cards.append(
+            '<article class="account-panel">'
+            f'<h3>{_esc(row["account"])}</h3>'
+            + cell("Permission screen", row["permission_screen"])
+            + cell("Binance's own permission check", row["permission_check"])
+            + cell("Tools handed to the agent", row["tools"])
+            + cell("Controlled tests", row["controlled_tests"])
+            + "</article>"
+        )
+    if not cards:
+        return '<p class="hero-panel-intro">No account-scoped headline evidence is available.</p>'
+    return '<div class="account-panels">' + "".join(cards) + "</div>"
+
+
+def _account_headline_summary(rows: list[dict[str, Any]]) -> str:
+    """Describe the comparison from the same facts used in the hero cells."""
+    if not rows:
+        return "No account comparison was recorded."
+
+    reports: list[str] = []
+    for row in rows:
+        flags = row.get("permission_flags") or {}
+        if flags.get("spot") is False and flags.get("futures") is False:
+            wording = "reported spot and futures trading disabled"
+        elif flags.get("spot") is True and flags.get("futures") is True:
+            wording = "reported spot and futures trading enabled"
+        else:
+            wording = "reported a mixed spot and futures permission result"
+        reports.append(f"{row['account']} {wording}")
+
+    if len(rows) < 2:
+        return reports[0] + "."
+
+    common_tools = {row.get("tool_count") for row in rows}
+    common_writes = {row.get("write_count") for row in rows}
+    common_tests = set(rows[0].get("tested_capabilities", []))
+    for row in rows[1:]:
+        common_tests &= set(row.get("tested_capabilities", []))
+    suffix = ""
+    if len(common_tools) == 1 and len(common_writes) == 1:
+        tool_count = next(iter(common_tools))
+        write_count = next(iter(common_writes))
+        suffix = (
+            f" Both trade-grant surfaces exposed the same {tool_count} tools and "
+            f"{write_count} writes, and KEYRING independently confirmed the same "
+            f"{len(common_tests)} trading families on both."
+        )
+    return ". ".join(reports) + "." + suffix
+
+
+def _provenance_money_html(rows: list[dict[str, Any]]) -> str:
+    def value(row: dict[str, Any], key: str) -> str:
+        layer = row.get(key)
+        if not layer:
+            return "—"
+        return _value_with_unit(key, layer)
+
+    entries = []
+    for row in rows:
+        gate_text = "Prompt shown" if row.get("gated") else "No prompt observed"
+        gate_label = row.get("gate_label", "")
+        entries.append(
+            '<div class="provenance-money-row">'
+            f'<div><strong>{_esc(row.get("account", "—"))}</strong><span>{_esc(row.get("client", "—"))} · {_esc(row.get("permission_mode", "—"))}</span></div>'
+            f'<div><span>Reachable</span><strong>{_esc(value(row, "capital_reachable_by_trading"))}</strong></div>'
+            f'<div><span>Before dispatch</span><strong>{_esc(gate_text)}</strong><small>{_esc(gate_label)}</small></div>'
+            f'<div><span>Autonomous risk</span><strong>{_esc(value(row, "autonomous_capital_at_risk"))}</strong></div>'
+            f'<div class="provenance-money-source">{_refs_html([row["gate_source"]] + ([row["capital_source"]["ref"]] if row.get("capital_source") else []))}</div>'
+            '</div>'
+        )
+    return "".join(entries) or '<p class="muted">No gate and capital contexts were recorded.</p>'
 
 
 def _capability_card(name: str, row: dict[str, Any], traces: dict[str, Any], scope: str | None) -> str:
@@ -455,7 +707,8 @@ def _capability_card(name: str, row: dict[str, Any], traces: dict[str, Any], sco
     for step in steps:
         proof_rows.append(
             '<div class="proof-row">'
-            f'<div class="proof-name">{_esc(STEP_LABELS.get(step.get("step"), step.get("step", "Evidence")))}</div>'
+            f'<div class="proof-name">{_esc(STEP_LABELS.get(step.get("step"), step.get("step", "Evidence")))}'
+            f'<span class="proof-label">{_esc(step.get("label", ""))}</span></div>'
             f'<div class="proof-value">{_esc(_text(step.get("value")))}</div>'
             f'<div class="proof-evidence">{_refs_html(step.get("evidence_records", []))}</div>'
             "</div>"
@@ -505,6 +758,8 @@ def render_html(state: dict[str, Any]) -> str:
     revocation = state.get("revocation", {})
     least = state.get("least_privilege", {})
     evidence_index = state.get("evidence_index", [])
+    account_headline = state.get("account_headline", [])
+    provenance_rows = financial.get("provenance_rows", [])
     approved_transactions = headline.get("approved_transactions", 0)
     revocation_text = (
         "Access stopped after disconnect"
@@ -524,10 +779,12 @@ def render_html(state: dict[str, Any]) -> str:
         permission_signal = "The permission report was compared with the live surface"
         permission_detail = "The report and the connected tool surface are shown together below."
 
-    if headline.get("tested_default_asked"):
-        confirmation_detail = "Codex CLI asked for approval in its tested default settings."
-    else:
-        confirmation_detail = "The tested default path did not show an approval step."
+    confirmation_detail = "; ".join(
+        f"{row['client']} {row['permission_mode']}: "
+        f"{'prompt shown' if row['gated'] else 'no prompt observed'} "
+        f"({row['gate_label']})"
+        for row in provenance_rows
+    ) or "No client gate observation was recorded."
 
     answer = (
         f"This connection reached {len(verified)} trading areas and showed {write_count} "
@@ -566,10 +823,12 @@ def render_html(state: dict[str, Any]) -> str:
     )
 
     contradiction_cards = "".join(
-        f'<article class="note-card"><div class="note-tag">Measured difference</div>'
-        f'<h3>{_esc(row["question"])}</h3><p>{_esc(row["measured"])}</p></article>'
+        f'<article class="note-card"><div class="note-tag">{_esc(row.get("label", "Measured difference"))}</div>'
+        f'<h3>{_esc(row["question"])}</h3><p>{_esc(row["measured"])}</p>'
+        f'<div class="note-evidence">{_refs_html(row.get("evidence", []))}</div></article>'
         for row in state.get("contradictions", [])
     )
+    provenance_money = _provenance_money_html(provenance_rows)
 
     evidence_json = json.dumps(evidence_index, ensure_ascii=True, separators=(",", ":")).replace("</", "<\\/")
     files_html = "".join(f'<span class="file-pill">{_esc(file)}</span>' for file in state.get("evidence_files", []))
@@ -585,8 +844,11 @@ def render_html(state: dict[str, Any]) -> str:
             '<header class="topbar"><div class="brand"><span class="brand-mark">K</span><span>KEYRING<small>connection report</small></span></div>',
             '<nav class="nav" aria-label="Report sections"><a href="#overview">Overview</a><a href="#access">Access</a><a href="#money">Money</a><a href="#evidence">Evidence</a><a href="#notes">Notes</a><button id="copy-json" type="button">Copy data link</button></nav></header>',
             '<header class="hero" id="overview"><div class="eyebrow">Measured connection report</div>',
-            '<h1>What could this Binance connection actually do?</h1>',
-            '<p class="lead">KEYRING checks the live connection, the tools it exposes, the requests it can reach, and the account state around each check.</p>',
+            '<h1>What can this agent actually do?</h1>',
+            '<p class="lead">We checked four ways. The answers didn\'t match.</p>',
+            '<section class="hero-panel" aria-labelledby="headline-panel-title"><h2 id="headline-panel-title">What can this agent actually do?</h2><p class="hero-panel-intro">The permission screen, Binance’s own permission check, the tools handed to the agent, and controlled tests each answer a different part of the same question.</p>',
+            f'{_account_headline_html(account_headline)}',
+            f'<p class="hero-panel-foot"><strong>Same permission set. Same measured trading surface. Different self-report.</strong><br>{_esc(_account_headline_summary(account_headline))}<br>Every figure on this page is regenerated from the evidence log. Nothing is typed in.</p></section>',
             '<div class="hero-grid"><div class="answer"><div class="answer-label">The answer from this run</div>',
             f"<h2>{_esc(answer)}</h2><p>{_esc(BOUNDARY)}</p></div>",
             '<div class="hero-facts">',
@@ -606,7 +868,7 @@ def render_html(state: dict[str, Any]) -> str:
             '<div class="signals">',
             f'<article class="signal"><div class="signal-label">Permission report</div><h3>{_esc(permission_signal)}</h3><p>{_esc(permission_detail)}</p></article>',
             f'<article class="signal warn"><div class="signal-label">Client behavior</div><h3>Confirmation behavior depended on the client</h3><p>{_esc(confirmation_detail)}</p></article>',
-            f'<article class="signal good"><div class="signal-label">Revocation</div><h3>{_esc(revocation_text)}</h3><p>{_esc(revocation_reason)}</p></article>',
+            f'<article class="signal good"><div class="signal-label">Revocation · {_esc(revocation.get("label", "OBSERVED · operator"))}</div><h3>{_esc(revocation_text)}</h3><p>{_esc(revocation_reason)}</p></article>',
             "</div></section>",
             '<section class="section" aria-labelledby="method-title"><div class="section-head"><div><div class="section-kicker">How the answer was built</div><h2 id="method-title">A short, visible path from permission to proof</h2></div></div>',
             '<div class="timeline">',
@@ -626,7 +888,9 @@ def render_html(state: dict[str, Any]) -> str:
             f'<div class="callout"><strong>Changing this permission:</strong> {_esc(remediation.get("outcome", "Not recorded").replace("RECONNECT_REQUIRED", "disconnect and authorize again"))}. The venue lists {_esc(instruments.get("listed_trading_instruments", "—"))} spot instruments, but only {_esc(financial.get("instruments", {}).get("spot_symbols_probed", "—"))} symbol was tested here; those numbers are not treated as the same thing.</div></section>',
             '<section class="section" id="money" aria-labelledby="money-title"><div class="section-head"><div><div class="section-kicker">Money and safety</div><h2 id="money-title">What money was within reach?</h2><p>Each number answers a different question. The capability checks were non-executing; the separate buy/sell measurement was explicitly approved.</p></div></div>',
             f'<div class="money-grid">{money_cards}</div>',
-            f'<div class="money-note-block"><strong>{_esc(approved_transactions)} approved transaction records are included separately.</strong> The connection’s default client asked for approval before the funded measurement. No Futures, transfer, or withdrawal was sent.</div></section>',
+            '<h3 class="subsection-title">Money and approval, kept by account and client</h3>',
+            f'<div class="provenance-money">{provenance_money}</div>',
+            f'<div class="money-note-block"><strong>{_esc(approved_transactions)} approved transaction records are included separately.</strong> The table above keeps each balance with the client and mode that produced its gate observation. No Futures, transfer, or withdrawal was sent.</div></section>',
             '<section class="section" id="evidence" aria-labelledby="evidence-title"><div class="section-head"><div><div class="section-kicker">Evidence health</div><h2 id="evidence-title">Why these answers can be checked</h2><p>Every card above links to a numbered record. Click any evidence chip to see its safe summary.</p></div></div>',
             '<div class="integrity-grid">',
             f'<article class="integrity-card"><span class="big">{_esc(state["records_replayed"])}</span><span class="small">records replayed</span></article>',
@@ -639,7 +903,7 @@ def render_html(state: dict[str, Any]) -> str:
             f'<article class="source-card"><h3>Evidence files in this report · {len(state.get("evidence_files", []))}</h3><div class="file-pills">{files_html}</div></article></section>',
             '<section class="section" id="notes" aria-labelledby="notes-title"><div class="section-head"><div><div class="section-kicker">Measured differences</div><h2 id="notes-title">Where published answers differed from the live session</h2><p>These are observations about what the connected surfaces said or did. They are not presented as exploits.</p></div></div>',
             f'<div class="notes-grid">{contradiction_cards}</div>',
-            '<div class="legend"><span><b>Measured</b> — seen in the run</span><span><b>Published information</b> — stated by a source</span><span><b>Assumption</b> — a cause not established by this run</span></div></section>',
+            '<div class="legend"><span><b>OBSERVED · harness</b> — captured by the build</span><span><b>OBSERVED · operator</b> — watched by a person</span><span><b>DOCUMENTED</b> — stated by a source</span><span><b>ASSUMED</b> — a cause not established by this run</span></div></section>',
             f'<footer class="footer"><span>Read-only report · generated {_esc(state["generated_at"])}</span><a href="/api/state" target="_blank" rel="noopener">Open the complete data view →</a></footer>',
             "</div>",
             '<div class="drawer-backdrop" id="drawer-backdrop" data-close="true" hidden></div><aside class="drawer" id="evidence-drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" hidden><div class="drawer-header"><h2 id="drawer-title">Evidence details</h2><button class="close" type="button" data-close="true" aria-label="Close evidence details">×</button></div><div id="drawer-content"></div></aside>',
@@ -650,7 +914,7 @@ def render_html(state: dict[str, Any]) -> str:
             "const escapeHtml = value => String(value ?? '—').replace(/[&<>\"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[char]));",
             "const drawer = document.getElementById('evidence-drawer'); const backdrop = document.getElementById('drawer-backdrop'); const drawerContent = document.getElementById('drawer-content');",
             "const closeDrawer = () => { drawer.hidden = true; backdrop.hidden = true; };",
-            "const openDrawer = ref => { const item = byRef[ref]; if (!item) return; drawerContent.innerHTML = `<div class=\"drawer-ref\">${escapeHtml(item.ref)}</div><dl><dt>Type</dt><dd>${escapeHtml(item.kind)}</dd><dt>Operation</dt><dd>${escapeHtml(item.operation)}</dd><dt>Capability</dt><dd>${escapeHtml(item.capability)}</dd><dt>Result</dt><dd>${escapeHtml(item.outcome)}</dd><dt>Label</dt><dd>${escapeHtml(item.label)}</dd><dt>Time</dt><dd>${escapeHtml(item.occurred_at)}</dd><dt>Error code</dt><dd>${escapeHtml(item.error_code)}</dd><dt>State check</dt><dd>${escapeHtml(item.state_proof)}</dd><dt>Source</dt><dd>${escapeHtml(item.source)}</dd></dl><div class=\"drawer-note\">This panel shows record metadata only. The full, redacted data is available from the JSON view.</div>`; drawer.hidden = false; backdrop.hidden = false; drawer.querySelector('.close').focus(); };",
+            "const openDrawer = ref => { const item = byRef[ref]; if (!item) return; drawerContent.innerHTML = `<div class=\"drawer-ref\">${escapeHtml(item.ref)}</div><dl><dt>Type</dt><dd>${escapeHtml(item.kind)}</dd><dt>Operation</dt><dd>${escapeHtml(item.operation)}</dd><dt>Capability</dt><dd>${escapeHtml(item.capability)}</dd><dt>Result</dt><dd>${escapeHtml(item.outcome)}</dd><dt>Label</dt><dd>${escapeHtml(item.label)}</dd><dt>Captured by</dt><dd>${escapeHtml(item.capture_origin)}</dd><dt>Time</dt><dd>${escapeHtml(item.occurred_at)}</dd><dt>Error code</dt><dd>${escapeHtml(item.error_code)}</dd><dt>State check</dt><dd>${escapeHtml(item.state_proof)}</dd><dt>Source</dt><dd>${escapeHtml(item.source)}</dd></dl><div class=\"drawer-note\">This panel shows record metadata only. The full, redacted data is available from the JSON view.</div>`; drawer.hidden = false; backdrop.hidden = false; drawer.querySelector('.close').focus(); };",
             "document.querySelectorAll('.evidence-ref').forEach(button => button.addEventListener('click', () => openDrawer(button.dataset.ref))); document.querySelectorAll('[data-close]').forEach(item => item.addEventListener('click', closeDrawer)); document.addEventListener('keydown', event => { if (event.key === 'Escape') closeDrawer(); });",
             "const cards = [...document.querySelectorAll('.access-card')]; const search = document.getElementById('capability-search'); const empty = document.getElementById('no-results'); let activeFilter = 'all';",
             "const applyFilters = () => { const query = search.value.trim().toLowerCase(); let shown = 0; cards.forEach(card => { const matchesFilter = activeFilter === 'all' || card.dataset.status === activeFilter; const matchesSearch = !query || card.dataset.search.includes(query); const visible = matchesFilter && matchesSearch; card.classList.toggle('hidden', !visible); if (visible) shown += 1; }); empty.classList.toggle('show', shown === 0); };",

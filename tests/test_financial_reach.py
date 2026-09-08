@@ -7,6 +7,8 @@ import pytest
 
 from keyring.financialreach import (
     WALLET_CAPABILITY,
+    _capital_layers_for_gate,
+    _confirmation_gate_observed,
     _latest_order_book_walk,
     _latest_quoted_wallet_balances,
     latest_complete_snapshot,
@@ -15,6 +17,7 @@ from keyring.financialreach import (
 )
 from keyring.evidence import EvidenceLog
 from keyring.models import EvidenceRecord
+from keyring.provenance import Provenance, require_compatible_provenance
 
 LABELS = {"OBSERVED", "DOCUMENTED", "ASSUMED", "INCONCLUSIVE"}
 LAYERS = (
@@ -60,20 +63,19 @@ def test_futures_ceiling_is_never_asserted(result):
 
 
 def test_autonomous_zero_is_never_attributed_to_a_gate_that_was_not_observed(result):
-    """The reason matters as much as the number.
-
-    The specification's example prints "$0 — confirmation required". Printing
-    that reason when no confirmation was observed would fabricate a finding.
-    """
+    """A scalar compatibility view may use only its matching gate row."""
     layer = result["autonomous_capital_at_risk"]
     gate = result["confirmation_gate"]
     if layer["label"] != "OBSERVED":
         pytest.skip("autonomous layer unresolved")
-    if not gate["default_mode_gated"]:
-        assert "confirmation step was observed" not in layer["reason"].replace("no confirmation", "")
-        assert "NOT because a gate exists" in layer["reason"]
+    selected = gate["selected_for_capital"]
+    assert selected is not None
+    assert selected["account"] == "Account B"
+    assert selected["client"] == "Codex CLI"
+    if not selected["gated"]:
+        assert "confirmation prompt was observed" not in layer["reason"]
     else:
-        assert "confirmation step was observed" in layer["reason"]
+        assert "same account and client context" in layer["reason"]
 
 
 def test_reachable_never_exceeds_visible(result):
@@ -187,3 +189,66 @@ def test_order_book_walk_is_read_from_evidence(tmp_path):
     value, _, payload = _latest_order_book_walk(tmp_path)
     assert value == Decimal("0.0054753406785")
     assert payload["levels_consumed"] == 1
+
+
+def test_conflicting_default_gates_are_not_resolved_by_file_order(tmp_path):
+    """Two clients' opposite defaults must remain two observations."""
+    for filename, client, gate, outcome in (
+        ("a-claude.jsonl", "Claude Code", "UNGATED", "NO_CONFIRMATION_PROMPT"),
+        ("z-codex.jsonl", "Codex CLI", "CLIENT-GATED", "CONFIRMATION_PROMPT_SHOWN"),
+    ):
+        EvidenceLog(tmp_path / filename).append(
+            EvidenceRecord(
+                record_type="operator_observation",
+                run_id=f"run-{client.lower().replace(' ', '-')}",
+                label="OBSERVED",
+                operation="client_gate_observation",
+                outcome=outcome,
+                gate=gate,
+                metadata={
+                    "account_label": "Account test",
+                    "client": client,
+                    "permission_mode": "default",
+                    "captured_by_build": False,
+                    "evidence_type": "operator observation of a client interface",
+                },
+            )
+        )
+
+    summary = _confirmation_gate_observed(tmp_path)
+
+    assert summary["default_mode_conflict"] is True
+    assert summary["default_mode_gated"] is None
+    assert [item["client"] for item in summary["observations"]] == [
+        "Claude Code",
+        "Codex CLI",
+    ]
+
+
+def test_capital_and_gate_from_different_provenance_keys_cannot_join():
+    capital = Provenance("Account A", "Claude Code", "default")
+    gate = Provenance("Account B", "Codex CLI", "default")
+
+    with pytest.raises(ValueError, match="provenance"):
+        require_compatible_provenance(capital, gate)
+
+    with pytest.raises(ValueError, match="different provenance accounts"):
+        _capital_layers_for_gate(
+            {
+                "provenance_key": gate.key,
+                "account": gate.account,
+                "client": gate.client,
+                "permission_mode": gate.permission_mode,
+                "gated": True,
+                "source": "gate.jsonl#1",
+            },
+            {
+                "account": capital.account,
+                "provenance": capital,
+                "total": Decimal("5.59"),
+                "per_wallet": {"Spot": Decimal("5.59")},
+                "source": "capital.jsonl#1",
+                "source_kind": "quoted wallet reading",
+            },
+            {"spot"},
+        )

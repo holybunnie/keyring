@@ -53,11 +53,13 @@ def revocation_summary(records: list[EvidenceRecord]) -> dict[str, Any]:
         }
     return {
         "status": "VERIFIED",
-        "label": "OBSERVED",
+        "label": "OBSERVED · operator",
+        "capture_origin": "operator",
         "n": len(convergences),
         "convergence_seconds": convergences[0] if len(convergences) == 1 else convergences,
         "reason": (
-            "known-permitted reads were followed by a denied read; interval is measured "
-            "from the last permitted response to the first denied response"
+            "manually recorded revocation trial: known-permitted reads were followed by a "
+            "denied read; interval is measured from the last permitted response to the "
+            "first denied response, not from the web UI click"
         ),
     }

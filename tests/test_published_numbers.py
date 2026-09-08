@@ -14,9 +14,11 @@ from pathlib import Path
 import pytest
 
 from keyring.authority import derive
+from keyring.evidence import EvidenceLog
 from keyring.leastprivilege import diff
 
 README = Path("README.md")
+CLIENT_MATRIX = Path("docs/client-matrix.md")
 
 
 @pytest.fixture(scope="module")
@@ -73,6 +75,31 @@ def test_every_verified_capability_is_named_in_the_readme(published, measured):
             assert row["probe_tool"] in published, f"{row['probe_tool']} missing from README"
 
 
+def test_model_boundary_example_is_retained_and_exact():
+    """The cited model/classifier disagreement must exist in active evidence."""
+    path = Path("evidence/raw/0012-codex-cli-second-account.jsonl")
+    assert path.exists()
+    assert not Path("evidence/superseded/0012-codex-cli-second-account.jsonl").exists()
+    record = next(
+        record
+        for record in EvidenceLog(path).records(verify=True)
+        if record.sequence == 78
+    )
+    interpretation = record.model_interpretation
+    assert interpretation is not None
+    assert interpretation["proposal"]["classification"] == "VERIFIED"
+    assert interpretation["final_classification"] == "INCONCLUSIVE"
+    assert interpretation["disagreement"] is True
+    assert record.metadata.get("discarded") is False
+
+
+def test_client_matrix_probe_price_matches_the_retained_record():
+    """The client-matrix prose must not drift from the controlled probe."""
+    text = CLIENT_MATRIX.read_text()
+    assert "at `0.01`\nUSDT on BTCUSDT" in text
+    assert "1.00" not in text
+
+
 LABELS = ("**OBSERVED", "**DOCUMENTED", "**ASSUMED", "**INCONCLUSIVE")
 
 
@@ -85,17 +112,23 @@ def test_no_unlabelled_numeric_claims(published):
     body = published.split("## Results", 1)[1].split("## Scope", 1)[0]
     offenders = []
     in_fence = False
+    labelled_paragraph = False
     for line in body.splitlines():
         stripped = line.strip()
         if stripped.startswith("```"):
             # Fenced blocks are generated command output, not prose claims.
             in_fence = not in_fence
+            labelled_paragraph = False
             continue
         if in_fence:
             continue
-        if not stripped or stripped.startswith(("|", "#", ">", "-")):
+        if not stripped:
+            labelled_paragraph = False
             continue
         if stripped.startswith(LABELS):
+            labelled_paragraph = True
+            continue
+        if labelled_paragraph or stripped.startswith(("|", "#", ">", "-")):
             continue
         # Filenames and identifiers are not claims: `docs/m0.md` and
         # `spot.newOrder` carry digits without asserting a measurement.

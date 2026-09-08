@@ -18,6 +18,7 @@ from typing import Any, Iterable
 from .authority import CAPABILITY_PREFIX, derive, is_write_tool_name
 from .evidence import EvidenceLog
 from .models import EvidenceRecord
+from .provenance import qualified_label
 
 
 def _all_records(evidence_dir: str | Path) -> list[tuple[str, EvidenceRecord]]:
@@ -74,6 +75,18 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
     """Build the proof chain behind every capability classification."""
     records = _all_records(evidence_dir)
     authority = derive(evidence_dir)
+    record_by_ref = {
+        (filename, record.sequence): record for filename, record in records
+    }
+
+    def label_for_refs(
+        refs: Iterable[tuple[str, int]], fallback: str = "OBSERVED · harness"
+    ) -> str:
+        first = next(iter(refs), None)
+        if first is None:
+            return fallback
+        source = record_by_ref.get(first)
+        return qualified_label(source) if source is not None else fallback
 
     # Retain both the complete discovery references and the write names. This
     # lets a trace prove absence under the account-only grant as well as the
@@ -132,7 +145,7 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                 _step(
                     "tool surface",
                     f"{len(write_names)} write tool(s) advertised: {', '.join(write_names)}",
-                    "OBSERVED",
+                    qualified_label(surface_sources[0][1]) if surface_sources else "OBSERVED · harness",
                     surface_refs,
                 )
             )
@@ -141,13 +154,20 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                 _step(
                     "tool surface",
                     "no write tool advertised under this grant",
-                    "OBSERVED",
+                    qualified_label(surface_sources[0][1]) if surface_sources else "OBSERVED · harness",
                     surface_refs,
                 )
             )
 
         if scope:
-            steps.append(_step("grant", scope, "OBSERVED", scope_sources))
+            steps.append(
+                _step(
+                    "grant",
+                    scope,
+                    label_for_refs(scope_sources),
+                    scope_sources,
+                )
+            )
 
         # The delta is an evidence-backed comparison, not an inferred count.
         # Keep it as its own line because it is often the most useful answer to
@@ -164,7 +184,7 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                     "discovery delta",
                     f"account-only versus selected grant; {len(write_names)} write tool(s) "
                     "in selected surface",
-                    "OBSERVED",
+                    label_for_refs(scope_sources),
                     delta_sources,
                 )
             )
@@ -190,7 +210,7 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                     _step(
                         "positive control",
                         f"{control.operation or 'positive read'} passed at {control.occurred_at:%H:%M:%S}",
-                        "OBSERVED",
+                        qualified_label(control),
                         [(control_filename, control.sequence)],
                     )
                 )
@@ -211,7 +231,7 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                     "probe plan",
                     f"planned_by {planned_by}; expected {expected_filter}; "
                     f"justification: {justification}",
-                    "OBSERVED",
+                    qualified_label(record),
                     [(filename, record.sequence)],
                 )
             )
@@ -220,7 +240,7 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                     "probe",
                     f"{record.operation or 'probe'} invoked; final classification "
                     f"{row['classification']}",
-                    "OBSERVED",
+                    qualified_label(record),
                     [(filename, record.sequence)],
                 )
             )
@@ -229,7 +249,7 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                     "response",
                     f"{row['error_code'] or record.error_code or 'no Binance code'}: "
                     f"{record.raw_response or record.outcome or 'no response'}",
-                    "OBSERVED",
+                    qualified_label(record),
                     [(filename, record.sequence)],
                 )
             )
@@ -238,7 +258,7 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                     _step(
                         "model interpretation",
                         json.dumps(record.model_interpretation, sort_keys=True, default=str),
-                        "OBSERVED",
+                        qualified_label(record),
                         [(filename, record.sequence)],
                     )
                 )
@@ -254,7 +274,7 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                         f"{'IDENTICAL' if identical else 'CHANGED'} "
                         f"({len(before.components or {})} components, "
                         f"complete={before.complete() and after.complete()})",
-                        "OBSERVED",
+                        qualified_label(record),
                         [(filename, record.sequence)],
                     )
                 )
@@ -262,7 +282,7 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                 _step(
                     "classification",
                     row["classification"],
-                    "OBSERVED" if row["classification"] != "INCONCLUSIVE" else "INCONCLUSIVE",
+                    qualified_label(record, "OBSERVED" if row["classification"] != "INCONCLUSIVE" else "INCONCLUSIVE"),
                     [(filename, record.sequence)],
                 )
             )
@@ -272,7 +292,10 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                 _step(
                     "probe",
                     "not probed",
-                    "INCONCLUSIVE" if row["classification"] == "INCONCLUSIVE" else "OBSERVED",
+                    qualified_label(
+                        surface_sources[0][1],
+                        "INCONCLUSIVE" if row["classification"] == "INCONCLUSIVE" else "OBSERVED",
+                    ) if surface_sources else ("INCONCLUSIVE" if row["classification"] == "INCONCLUSIVE" else "OBSERVED · harness"),
                     classification_sources,
                 )
             )
@@ -280,7 +303,10 @@ def trace(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
                 _step(
                     "classification",
                     row["classification"],
-                    "OBSERVED" if row["classification"] == "DENIED" else "INCONCLUSIVE",
+                    qualified_label(
+                        surface_sources[0][1],
+                        "OBSERVED" if row["classification"] == "DENIED" else "INCONCLUSIVE",
+                    ) if surface_sources else ("OBSERVED · harness" if row["classification"] == "DENIED" else "INCONCLUSIVE"),
                     classification_sources,
                 )
             )
@@ -305,7 +331,7 @@ def render(result: dict[str, Any]) -> str:
         for step in entry["steps"]:
             lines.append(
                 f"  {step['step']:20} {step['value'][:70]:70} "
-                f"{step['label']:12} {step['evidence']}"
+                f"{step['label']:19} {step['evidence']}"
             )
         for note in entry["notes"]:
             lines.append(f"  note: {note}")
