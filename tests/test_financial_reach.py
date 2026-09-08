@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import json
+from decimal import Decimal
+
 import pytest
 
 from keyring.financialreach import (
     WALLET_CAPABILITY,
+    _latest_quoted_wallet_balances,
     latest_complete_snapshot,
     reach,
     render,
 )
+from keyring.evidence import EvidenceLog
+from keyring.models import EvidenceRecord
 
 LABELS = {"OBSERVED", "DOCUMENTED", "ASSUMED", "INCONCLUSIVE"}
 LAYERS = (
@@ -124,3 +130,34 @@ def test_render_marks_unresolved_layers_visibly(result):
     for key in LAYERS:
         if result[key]["label"] == "INCONCLUSIVE":
             assert "INCONCLUSIVE" in text
+
+
+def test_quoted_wallet_reading_is_preferred_for_capital_units(tmp_path):
+    path = tmp_path / "funded.jsonl"
+    log = EvidenceLog(path)
+    payload = [
+        {"walletName": "Spot", "balance": "5.60", "activate": True},
+        {"walletName": "USDⓈ-M Futures", "balance": "0", "activate": True},
+    ]
+    log.append(
+        EvidenceRecord(
+            record_type="financial_balance_quote",
+            run_id="funded",
+            label="OBSERVED",
+            operation="wallet.queryUserWalletBalance",
+            raw_response=json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "content": [{"type": "text", "text": json.dumps(payload)}]
+                    },
+                }
+            ),
+            http_status=200,
+            metadata={"quote_asset": "USDT"},
+        )
+    )
+
+    total, per_wallet, _ = _latest_quoted_wallet_balances(tmp_path)
+    assert total == Decimal("5.60")
+    assert per_wallet["Spot"] == Decimal("5.60")

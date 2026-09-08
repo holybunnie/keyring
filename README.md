@@ -65,27 +65,31 @@ This is an observability gap, not a vulnerability. The endpoint an operator woul
 
 ### Financial reach
 
-**OBSERVED:** Both capability runs measured empty Agentic sub-accounts.
+**OBSERVED:** The second Agentic sub-account was funded separately after its
+capability measurement. A fresh complete read-only snapshot found
+`5.60000000 USDT` in its Spot account, and a wallet reading explicitly quoted
+in USDT returned `5.6` for the Spot wallet.
 
 ```text
-Capital visible                                  0
-Capital reachable by verified trading paths     0
+Capital visible                                5.6 USDT
+Capital reachable by verified trading paths    5.6 USDT
 Autonomous capital at risk                       0
-Spot holdings                                    0
-Immediate exit cost                              0
+Spot holdings                                    1
 Open futures positions                           0
 ```
 
-**OBSERVED:** The current autonomous-capital figure is zero because both measured accounts were empty. Codex CLI default mode displayed a client prompt, while Claude Code default mode did not; the empty-account result is not a funded-capital measurement.
+**OBSERVED:** The autonomous-capital figure is zero for this tested default
+because Codex CLI displayed a confirmation prompt before dispatch. No order or
+transfer was sent during the funded measurement.
 
 ### Zero-state proof
 
 **OBSERVED:** Every current probe captures fourteen state components before and after. Each snapshot is canonicalized, SHA-256 hashed, and linked into its append-only evidence chain.
 
 ```text
-records replayed        250
-state digests seen       14
-distinct states           3
+records replayed        268
+state digests seen       15
+distinct states           4
 identical throughout   False
 probe pairs identical   True
 chain unbroken         True

@@ -84,15 +84,15 @@ requires disconnecting and re-authorizing.
 two. That inventory is a potential surface only and is not merged with measured
 authority.
 
-**OBSERVED:** Both capability sub-accounts were empty. Current financial reach
-therefore reports zero visible capital, zero verified trading reach, zero
-autonomous capital at risk, zero Spot holdings, zero immediate exit cost, and
-zero open futures positions. The zero exit cost is by absence of holdings, not
-by an order-book walk.
+**OBSERVED:** The second sub-account was funded after capability measurement.
+A fresh complete read-only snapshot found `5.60000000 USDT` in Spot, and a
+wallet reading explicitly quoted in USDT returned `5.6` for the Spot wallet.
+The measured capital-visible and capital-reachable values are therefore
+`5.6 USDT`.
 
-**OBSERVED:** The zero autonomous-capital figure is a consequence of the empty
-accounts; Codex CLI default mode displayed a client prompt, while Claude Code
-default mode did not.
+**OBSERVED:** Codex CLI default mode displayed a confirmation prompt before
+dispatch, so the measured autonomous-capital-at-risk value for this run is
+`0`.
 
 ## 6. Zero-state proof
 
@@ -100,9 +100,9 @@ default mode did not.
 after. The complete evidence set currently replays as:
 
 ```text
-records replayed        250
-state digests seen       14
-distinct states           3
+records replayed        268
+state digests seen       15
+distinct states           4
 identical throughout   False
 probe pairs identical   True
 chain unbroken         True

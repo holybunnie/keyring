@@ -22,6 +22,7 @@ Two refusals are deliberate:
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+import json
 from pathlib import Path
 from typing import Any
 
@@ -53,6 +54,59 @@ def _layer(value: Any, label: str, reason: str, sources: list[str] | None = None
 
 def _unavailable(component: Any) -> bool:
     return isinstance(component, dict) and component.get("unavailable") is True
+
+
+def _record_payload(record: EvidenceRecord) -> Any:
+    """Decode a retained JSON-RPC response without trusting derived fields."""
+    if record.response is not None:
+        return record.response
+    if not record.raw_response:
+        return None
+    try:
+        envelope = json.loads(record.raw_response)
+    except (TypeError, ValueError):
+        return None
+    result = envelope.get("result", {}) if isinstance(envelope, dict) else {}
+    content = result.get("content") if isinstance(result, dict) else None
+    if isinstance(content, list) and content and isinstance(content[0], dict):
+        text = content[0].get("text")
+        if isinstance(text, str):
+            try:
+                return json.loads(text)
+            except (TypeError, ValueError):
+                return text
+    return result
+
+
+def _latest_quoted_wallet_balances(
+    evidence_dir: str | Path,
+    quote_asset: str = "USDT",
+) -> tuple[Decimal, dict[str, Decimal], EvidenceRecord] | None:
+    """Return the newest wallet reading explicitly quoted in ``quote_asset``."""
+    latest: tuple[Decimal, dict[str, Decimal], EvidenceRecord] | None = None
+    for path in sorted(Path(evidence_dir).glob("*.jsonl")):
+        for record in EvidenceLog(path).records(verify=True):
+            if record.record_type != "financial_balance_quote":
+                continue
+            if str(record.metadata.get("quote_asset", "")).upper() != quote_asset.upper():
+                continue
+            payload = _record_payload(record)
+            if not isinstance(payload, list):
+                continue
+            per_wallet: dict[str, Decimal] = {}
+            total = Decimal(0)
+            try:
+                for entry in payload:
+                    name = str(entry["walletName"])
+                    amount = _decimal(entry["balance"])
+                    if amount is None:
+                        raise ValueError("wallet balance is not numeric")
+                    per_wallet[name] = amount
+                    total += amount
+            except (KeyError, TypeError, ValueError):
+                continue
+            latest = (total, per_wallet, record)
+    return latest
 
 
 def latest_complete_snapshot(
@@ -114,7 +168,16 @@ def reach(evidence_dir: str | Path = "evidence/raw") -> dict[str, Any]:
 
     # --- capital visible -----------------------------------------------------
     wallets = components.get("wallet_balances")
-    if _unavailable(wallets) or not isinstance(wallets, list):
+    quoted = _latest_quoted_wallet_balances(evidence_dir)
+    if quoted is not None:
+        total, per_wallet, quoted_record = quoted
+        visible = _layer(
+            str(total),
+            "OBSERVED",
+            "sum of wallet balances from a retained wallet reading explicitly quoted in USDT",
+            [f"record:{quoted_record.sequence}"],
+        )
+    elif _unavailable(wallets) or not isinstance(wallets, list):
         visible = _layer(None, "INCONCLUSIVE", "wallet balance component unavailable")
         per_wallet: dict[str, Decimal] = {}
     else:

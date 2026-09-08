@@ -1,6 +1,6 @@
 # Demo script
 
-This script narrates the measured Claude Code build. All values come from `evidence/raw/`.
+This script narrates the measured KEYRING build. All values come from `evidence/raw/`.
 
 ## 0:00 — boundary
 
@@ -18,7 +18,7 @@ This script narrates the measured Claude Code build. All values come from `evide
 
 ## 1:30 — client gate
 
-**OBSERVED:** “The direct gateway baseline and Claude Code default mode reached Spot validation without a confirmation. Claude Code manual mode displayed a prompt; the operator declined.”
+**OBSERVED:** “The direct gateway baseline and Claude Code default mode reached Spot validation without a confirmation. Claude Code manual mode and Codex CLI default mode displayed a prompt.”
 
 ## 2:00 — least privilege
 
@@ -26,9 +26,9 @@ This script narrates the measured Claude Code build. All values come from `evide
 
 ## 2:30 — financial reach and proof
 
-**OBSERVED:** “The measured sub-account was empty. Capital visible, capital reachable, autonomous capital at risk, Spot holdings, immediate exit cost, and open futures positions are all zero.”
+**OBSERVED:** “After capability measurement, the second sub-account was funded separately. The fresh read-only snapshot shows 5.6 USDT visible and 5.6 USDT reachable through verified trading paths. Codex CLI default mode displayed a confirmation prompt, so autonomous capital at risk is 0 for that tested default.”
 
-**OBSERVED:** “Fourteen state components were captured before and after the current probes. Six state digests were seen, all identical, with an unbroken hash chain.”
+**OBSERVED:** “Fourteen state components were captured before and after the current probes. The aggregate evidence replays 268 records with 15 state digests, four distinct captured states, identical before-and-after probe pairs, and an unbroken hash chain.”
 
 ## Close
 
